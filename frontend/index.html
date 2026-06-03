@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TradeBot — Live Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body data-page="dashboard">
+
+  <!-- ── Navigation ─────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="icon">◈</span>
+      <span>TRADEBOT</span>
+    </div>
+    <div class="nav-links">
+      <a href="index.html"    class="nav-link active">Dashboard</a>
+      <a href="backtest.html" class="nav-link">Backtest</a>
+      <a href="about.html"    class="nav-link">About</a>
+    </div>
+  </nav>
+
+  <!-- ── Control bar ────────────────────────────────────────────────────── -->
+  <div class="control-bar">
+    <div class="control-left">
+      <div class="status-dot stopped" id="bot-dot"></div>
+      <span class="status-text" id="bot-status-text">BOT STOPPED</span>
+      <span class="sep">|</span>
+      <span class="market-pill closed" id="market-status">MARKET CLOSED</span>
+    </div>
+    <div class="control-right">
+      <select class="select" id="strategy-select">
+        <option value="ma_crossover">Moving Average Crossover</option>
+        <option value="rsi">RSI Mean Reversion</option>
+        <option value="macd">MACD Momentum</option>
+      </select>
+      <button class="btn btn-start" id="bot-toggle">START BOT</button>
+    </div>
+  </div>
+
+  <!-- ── Stats ──────────────────────────────────────────────────────────── -->
+  <div class="stats-grid container">
+
+    <div class="stat-card">
+      <div class="stat-label">PORTFOLIO VALUE</div>
+      <div class="stat-value" id="stat-value">$—</div>
+      <div class="stat-sub">Paper trading account</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">TOTAL RETURN</div>
+      <div class="stat-value" id="stat-return">—</div>
+      <div class="stat-sub">Since bot started</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">WIN RATE</div>
+      <div class="stat-value" id="stat-winrate">—</div>
+      <div class="stat-sub">Profitable closed trades</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">ACTIVE POSITIONS</div>
+      <div class="stat-value" id="stat-positions">0</div>
+      <div class="stat-sub" id="stat-positions-sub">0 / 10 daily trades used</div>
+    </div>
+
+  </div>
+
+  <!-- ── Positions + Trades ─────────────────────────────────────────────── -->
+  <div class="content-grid container">
+
+    <!-- Live positions -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">LIVE POSITIONS</span>
+        <span class="panel-badge" id="positions-count">0</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>TICKER</th>
+              <th>SHARES</th>
+              <th>ENTRY</th>
+              <th>CURRENT</th>
+              <th>P&amp;L %</th>
+              <th>STOP</th>
+              <th>TARGET</th>
+            </tr>
+          </thead>
+          <tbody id="positions-tbody">
+            <tr><td colspan="7" class="empty-state">No open positions</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Recent trades feed -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">RECENT TRADES</span>
+      </div>
+      <div class="trades-feed" id="trades-feed">
+        <div class="empty-state">No trades yet — start the bot to begin trading</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Equity curve ────────────────────────────────────────────────────── -->
+  <div class="panel panel-full">
+    <div class="panel-header">
+      <span class="panel-title">EQUITY CURVE</span>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="equity-chart"></canvas>
+    </div>
+  </div>
+
+  <!-- ── Activity log ───────────────────────────────────────────────────── -->
+  <div class="panel panel-full" style="margin-bottom: 24px;">
+    <div class="panel-header">
+      <span class="panel-title">ACTIVITY LOG</span>
+    </div>
+    <div class="activity-log" id="activity-log">
+      <div class="log-empty">Waiting for bot activity…</div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

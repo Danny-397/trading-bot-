@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TradeBot — Backtest</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body data-page="backtest">
+
+  <!-- ── Navigation ─────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="icon">◈</span>
+      <span>TRADEBOT</span>
+    </div>
+    <div class="nav-links">
+      <a href="index.html"    class="nav-link">Dashboard</a>
+      <a href="backtest.html" class="nav-link active">Backtest</a>
+      <a href="about.html"    class="nav-link">About</a>
+    </div>
+  </nav>
+
+  <!-- ── Backtest form ──────────────────────────────────────────────────── -->
+  <div class="bt-form container" style="margin-top: 16px;">
+    <h2>BACKTESTING ENGINE</h2>
+
+    <div class="form-grid">
+
+      <div class="form-field">
+        <label>STRATEGY</label>
+        <select class="select" id="bt-strategy">
+          <option value="ma_crossover">Moving Average Crossover (SMA 20/50)</option>
+          <option value="rsi">RSI Mean Reversion (14-period)</option>
+          <option value="macd">MACD Momentum (12/26/9)</option>
+        </select>
+      </div>
+
+      <div class="form-field">
+        <label>START DATE</label>
+        <input class="input" type="date" id="bt-start">
+      </div>
+
+      <div class="form-field">
+        <label>END DATE</label>
+        <input class="input" type="date" id="bt-end">
+      </div>
+
+      <div class="form-field">
+        <label>STARTING CAPITAL ($)</label>
+        <input class="input" type="number" id="bt-capital" value="100000" min="1000" max="10000000" step="1000">
+      </div>
+
+    </div>
+
+    <!-- Ticker selection -->
+    <div class="form-field" style="margin-bottom: 20px;">
+      <label style="display:block; margin-bottom: 8px;">SELECT TICKERS (click to toggle)</label>
+      <div class="ticker-grid">
+        <div class="ticker-chip selected" data-ticker="AAPL">AAPL</div>
+        <div class="ticker-chip selected" data-ticker="MSFT">MSFT</div>
+        <div class="ticker-chip selected" data-ticker="NVDA">NVDA</div>
+        <div class="ticker-chip selected" data-ticker="GOOGL">GOOGL</div>
+        <div class="ticker-chip selected" data-ticker="TSLA">TSLA</div>
+        <div class="ticker-chip selected" data-ticker="JPM">JPM</div>
+        <div class="ticker-chip selected" data-ticker="SPY">SPY</div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="bt-run" style="padding: 10px 28px; font-size: 12px; letter-spacing: 1.5px;">
+      RUN BACKTEST
+    </button>
+    <span style="color: var(--text-muted); font-size: 11px; margin-left: 12px;">
+      Downloads historical data then simulates the strategy day-by-day
+    </span>
+  </div>
+
+  <!-- ── Results (hidden until backtest runs) ───────────────────────────── -->
+  <div class="bt-results" id="bt-results">
+
+    <!-- Metrics grid -->
+    <div class="metrics-grid">
+
+      <div class="metric-card highlight">
+        <div class="metric-label">TOTAL RETURN</div>
+        <div class="metric-value" id="r-return">—</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">FINAL VALUE</div>
+        <div class="metric-value" id="r-final">—</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">WIN RATE</div>
+        <div class="metric-value" id="r-winrate">—</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">TOTAL TRADES</div>
+        <div class="metric-value" id="r-trades">—</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">MAX DRAWDOWN</div>
+        <div class="metric-value" id="r-drawdown">—</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">SHARPE RATIO</div>
+        <div class="metric-value" id="r-sharpe">—</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">AVG WIN</div>
+        <div class="metric-value" id="r-avgwin">—</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">AVG LOSS</div>
+        <div class="metric-value" id="r-avgloss">—</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">BEST TRADE</div>
+        <div class="metric-value" id="r-best">—</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">WORST TRADE</div>
+        <div class="metric-value" id="r-worst">—</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">SPY BUY &amp; HOLD</div>
+        <div class="metric-value" id="r-benchmark">—</div>
+      </div>
+
+    </div>
+
+    <!-- Equity curve chart -->
+    <div class="panel" style="margin-bottom: 12px;">
+      <div class="panel-header">
+        <span class="panel-title">EQUITY CURVE vs SPY BENCHMARK</span>
+      </div>
+      <div class="chart-wrap" style="height: 320px;">
+        <canvas id="bt-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Trade history -->
+    <div class="panel" style="margin-bottom: 24px;">
+      <div class="panel-header">
+        <span class="panel-title">TRADE HISTORY (last 200 closed trades)</span>
+      </div>
+      <div class="table-wrap" style="max-height: 400px; overflow-y: auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>DATE</th>
+              <th>TICKER</th>
+              <th>ACTION</th>
+              <th>PRICE</th>
+              <th>SHARES</th>
+              <th>P&amp;L ($)</th>
+              <th>P&amp;L %</th>
+            </tr>
+          </thead>
+          <tbody id="bt-trades-tbody">
+            <tr><td colspan="7" class="empty-state">Run a backtest to see trade history</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
