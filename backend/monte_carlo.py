@@ -92,7 +92,9 @@ def run_simulation(
         idx.append(n - 1)
 
     sampled   = equity_matrix[:, idx]
-    fan_dates = [dates[i] for i in idx]
+    # equity_matrix[:, i] = portfolio after the i-th daily return
+    # that corresponds to port_hist[i+1], so shift dates by 1
+    fan_dates = [dates[i + 1] for i in idx]
 
     def _band(pct):
         return [round(float(v), 2) for v in np.percentile(sampled, pct, axis=0)]

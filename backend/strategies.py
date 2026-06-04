@@ -16,6 +16,7 @@ signal return values:  'BUY' | 'SELL' | 'HOLD' | None  (None = data error)
 """
 
 import logging
+import pandas as pd
 import features as feat
 
 logger = logging.getLogger(__name__)
