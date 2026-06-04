@@ -6,9 +6,17 @@ const API_BASE =
     : 'https://YOUR-RENDER-APP.onrender.com';   // ← update after deploy
 
 const STRATEGY_LABELS = {
+  adaptive:     'Adaptive (Regime-Driven)',
   ma_crossover: 'Moving Average Crossover',
   rsi:          'RSI Mean Reversion',
   macd:         'MACD Momentum',
+  ml:           'ML Model',
+};
+
+const RISK_NOTES = {
+  conservative: 'Conservative: 3% stop-loss, 10% target, 5% max position. Sits out high-volatility regimes entirely.',
+  moderate:     'Moderate: 5% stop-loss, 15% target, 10% max position. Reduces size 50% in high-volatility regimes.',
+  aggressive:   'Aggressive: 7% stop-loss, 20% target, 15% max position. Trades at full size in all regimes.',
 };
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
@@ -118,6 +126,9 @@ if (document.body.dataset.page === 'dashboard') {
 
     const sel = el('strategy-select');
     if (sel && status.strategy) sel.value = status.strategy;
+
+    updateRegimePanel(status.regime);
+    updateRiskButtons(status.risk_tolerance);
   }
 
   function updateStats(status) {
@@ -277,6 +288,57 @@ if (document.body.dataset.page === 'dashboard') {
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
+  // ── Risk tolerance buttons ───────────────────────────────────────────────
+  document.querySelectorAll('.risk-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tol = btn.dataset.tol;
+      try {
+        await api('/api/risk_tolerance', {
+          method: 'POST',
+          body: JSON.stringify({ tolerance: tol }),
+        });
+        document.querySelectorAll('.risk-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const note = el('risk-note');
+        if (note) note.textContent = RISK_NOTES[tol] || '';
+      } catch (_) {}
+    });
+  });
+
+  function updateRegimePanel(regime) {
+    if (!regime) return;
+    const badge   = el('regime-badge');
+    const label   = el('regime-label');
+    const desc    = el('regime-desc');
+    const strat   = el('regime-strategy');
+    const adxEl   = el('ri-adx');
+    const volEl   = el('ri-vol');
+    const bbwEl   = el('ri-bbw');
+
+    if (badge) {
+      badge.textContent = regime.label || regime.regime;
+      badge.className   = 'regime-badge ' + (regime.regime || '');
+    }
+    if (label) {
+      label.textContent = regime.label || regime.regime;
+      label.className   = 'regime-label ' + (regime.regime || '');
+    }
+    if (desc)  desc.textContent  = regime.description || '—';
+    if (strat) strat.textContent = STRATEGY_LABELS[regime.strategy] || regime.strategy || '—';
+    if (adxEl) adxEl.textContent = regime.adx != null ? regime.adx.toFixed(1) : '—';
+    if (volEl) volEl.textContent = regime.vol_30d != null ? regime.vol_30d.toFixed(1) + '%' : '—';
+    if (bbwEl) bbwEl.textContent = regime.bb_width != null ? regime.bb_width.toFixed(3) : '—';
+  }
+
+  function updateRiskButtons(tolerance) {
+    if (!tolerance) return;
+    document.querySelectorAll('.risk-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.tol === tolerance);
+    });
+    const note = el('risk-note');
+    if (note) note.textContent = RISK_NOTES[tolerance] || '';
+  }
+
   // Kick off
   refreshAll();
   refreshTimer = setInterval(refreshAll, 10_000);
@@ -320,6 +382,7 @@ if (document.body.dataset.page === 'backtest') {
     btn.disabled     = true;
     btn.innerHTML    = '<span class="spinner"></span> RUNNING…';
 
+    const riskRadio = document.querySelector('input[name="bt-risk"]:checked');
     const payload = {
       strategy:        el('bt-strategy').value,
       tickers:         selectedTickers,
@@ -327,6 +390,7 @@ if (document.body.dataset.page === 'backtest') {
       end_date:        el('bt-end').value,
       initial_capital: parseFloat(el('bt-capital').value) || 100_000,
       walk_forward:    el('bt-walkforward')?.checked ?? false,
+      risk_tolerance:  riskRadio ? riskRadio.value : 'moderate',
     };
 
     try {
@@ -387,6 +451,9 @@ if (document.body.dataset.page === 'backtest') {
 
     // Chart
     renderBtChart(result.equity_curve, result.spy_curve, payload.initial_capital);
+
+    // Regime breakdown
+    renderRegimeBreakdown(result.regime_breakdown || {});
 
     // Trade table
     renderTradeTable(result.trades || []);
@@ -476,6 +543,36 @@ if (document.body.dataset.page === 'backtest') {
         },
       },
     });
+  }
+
+  function renderRegimeBreakdown(breakdown) {
+    const panel = el('regime-breakdown-panel');
+    const tbody = el('regime-breakdown-tbody');
+    if (!panel || !tbody) return;
+
+    const rows = Object.entries(breakdown);
+    if (!rows.length) {
+      panel.style.display = 'none';
+      return;
+    }
+
+    panel.style.display = 'block';
+    tbody.innerHTML = rows
+      .sort((a, b) => b[1].trade_count - a[1].trade_count)
+      .map(([regimeName, d]) => {
+        const wrClass  = parseFloat(d.win_rate) >= 50 ? 'positive' : 'negative';
+        const pnlClass = colorClass(d.total_pnl);
+        return `
+          <tr>
+            <td><span class="regime-badge ${regimeName}">${d.label}</span></td>
+            <td>${d.trade_count}</td>
+            <td class="${wrClass}">${d.win_rate}%</td>
+            <td class="${pnlClass}">${fmt$(d.total_pnl)}</td>
+            <td class="${colorClass(d.avg_pnl)}">${fmt$(d.avg_pnl)}</td>
+            <td class="positive">${fmt$(d.best_trade)}</td>
+            <td class="negative">${fmt$(d.worst_trade)}</td>
+          </tr>`;
+      }).join('');
   }
 
   function renderTradeTable(trades) {

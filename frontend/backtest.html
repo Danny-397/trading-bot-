@@ -33,6 +33,7 @@
       <div class="form-field">
         <label>STRATEGY</label>
         <select class="select" id="bt-strategy">
+          <option value="adaptive">◈ Adaptive (Regime-Driven)</option>
           <option value="ma_crossover">Moving Average Crossover (SMA 20/50)</option>
           <option value="rsi">RSI Mean Reversion (14-period)</option>
           <option value="macd">MACD Momentum (12/26/9)</option>
@@ -68,6 +69,22 @@
         <div class="ticker-chip selected" data-ticker="TSLA">TSLA</div>
         <div class="ticker-chip selected" data-ticker="JPM">JPM</div>
         <div class="ticker-chip selected" data-ticker="SPY">SPY</div>
+      </div>
+    </div>
+
+    <!-- Risk tolerance for backtest -->
+    <div class="form-field" style="margin-bottom: 20px;">
+      <label style="display:block; margin-bottom: 8px;">RISK TOLERANCE</label>
+      <div style="display: flex; gap: 16px;">
+        <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:11px; color:var(--text-muted);">
+          <input type="radio" name="bt-risk" value="conservative"> CONSERVATIVE
+        </label>
+        <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:11px; color:var(--text-muted);">
+          <input type="radio" name="bt-risk" value="moderate" checked> MODERATE
+        </label>
+        <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:11px; color:var(--text-muted);">
+          <input type="radio" name="bt-risk" value="aggressive"> AGGRESSIVE
+        </label>
       </div>
     </div>
 
@@ -172,6 +189,30 @@
       </div>
       <div class="chart-wrap" style="height: 320px;">
         <canvas id="bt-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Regime breakdown -->
+    <div class="panel" id="regime-breakdown-panel" style="margin-bottom: 12px; display:none;">
+      <div class="panel-header">
+        <span class="panel-title">PERFORMANCE BY REGIME</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>REGIME</th>
+              <th>TRADES</th>
+              <th>WIN RATE</th>
+              <th>TOTAL P&amp;L ($)</th>
+              <th>AVG P&amp;L ($)</th>
+              <th>BEST ($)</th>
+              <th>WORST ($)</th>
+            </tr>
+          </thead>
+          <tbody id="regime-breakdown-tbody">
+          </tbody>
+        </table>
       </div>
     </div>
 

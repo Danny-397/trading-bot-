@@ -452,6 +452,147 @@ select option { background: var(--surface); }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Regime + Risk tolerance row ────────────────────────────────────────── */
+.regime-risk-row {
+  display:               grid;
+  grid-template-columns: 1fr 1fr;
+  gap:                   12px;
+  padding:               0 20px 12px;
+}
+@media (max-width: 900px) { .regime-risk-row { grid-template-columns: 1fr; } }
+
+/* Regime panel */
+.regime-body {
+  display: flex;
+  gap:     20px;
+  padding: 16px;
+}
+.regime-main  { flex: 1; }
+.regime-label {
+  font-size:     18px;
+  font-weight:   700;
+  margin-bottom: 4px;
+}
+.regime-desc {
+  font-size:  11px;
+  color:      var(--text-muted);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+.regime-strategy-row {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+}
+.regime-strategy-tag {
+  font-size:     9px;
+  letter-spacing: 1.5px;
+  color:         var(--text-muted);
+  background:    var(--surface2);
+  border:        1px solid var(--border2);
+  padding:       2px 6px;
+  border-radius: 3px;
+}
+.regime-strategy-val {
+  font-size:   12px;
+  font-weight: 700;
+  color:       var(--blue);
+}
+.regime-indicators {
+  display:        flex;
+  flex-direction: column;
+  gap:            10px;
+  min-width:      120px;
+}
+.regime-ind {
+  display:        flex;
+  flex-direction: column;
+  gap:            1px;
+}
+.ri-label {
+  font-size:     9px;
+  letter-spacing: 1.5px;
+  color:         var(--text-muted);
+}
+.ri-value {
+  font-size:   14px;
+  font-weight: 700;
+}
+.ri-hint {
+  font-size: 9px;
+  color:     var(--text-muted);
+}
+
+/* Regime badge colors */
+.regime-badge {
+  font-size:     10px;
+  letter-spacing: 1px;
+  padding:       2px 10px;
+  border-radius: 10px;
+  border:        1px solid var(--border2);
+  color:         var(--text-muted);
+  font-weight:   600;
+}
+.regime-badge.TRENDING_UP    { border-color: var(--green);  color: var(--green); }
+.regime-badge.TRENDING_DOWN  { border-color: var(--red);    color: var(--red); }
+.regime-badge.RANGING        { border-color: var(--yellow); color: var(--yellow); }
+.regime-badge.HIGH_VOLATILITY { border-color: #e3913b;      color: #e3913b; }
+
+.regime-label.TRENDING_UP    { color: var(--green); }
+.regime-label.TRENDING_DOWN  { color: var(--red); }
+.regime-label.RANGING        { color: var(--yellow); }
+.regime-label.HIGH_VOLATILITY { color: #e3913b; }
+
+/* Risk tolerance panel */
+.risk-body {
+  padding: 16px;
+}
+.risk-buttons {
+  display: flex;
+  gap:     8px;
+  margin-bottom: 12px;
+}
+.risk-btn {
+  flex:          1;
+  padding:       10px 12px;
+  border:        1px solid var(--border2);
+  border-radius: var(--radius);
+  background:    var(--surface2);
+  cursor:        pointer;
+  text-align:    left;
+  transition:    all .15s;
+}
+.risk-btn:hover { border-color: var(--blue); }
+.risk-btn.active {
+  border-color: var(--blue);
+  background:   var(--blue-dim);
+}
+.risk-btn-name {
+  display:       block;
+  font-size:     10px;
+  font-weight:   700;
+  letter-spacing: 1.5px;
+  color:         var(--text);
+  margin-bottom: 4px;
+  font-family:   var(--mono);
+}
+.risk-btn.active .risk-btn-name { color: var(--blue); }
+.risk-btn-desc {
+  display:   block;
+  font-size: 9px;
+  color:     var(--text-muted);
+  font-family: var(--mono);
+}
+.risk-note {
+  font-size:  11px;
+  color:      var(--text-muted);
+  line-height: 1.5;
+  padding:    8px 10px;
+  background: var(--surface2);
+  border-radius: var(--radius);
+  border:     1px solid var(--border);
+}
+
 /* ── About page ─────────────────────────────────────────────────────────── */
 .about-wrap {
   max-width:  900px;

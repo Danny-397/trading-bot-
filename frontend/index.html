@@ -39,6 +39,7 @@
     </div>
     <div class="control-right">
       <select class="select" id="strategy-select">
+        <option value="adaptive">◈ Adaptive (Regime-Driven)</option>
         <option value="ma_crossover">Moving Average Crossover</option>
         <option value="rsi">RSI Mean Reversion</option>
         <option value="macd">MACD Momentum</option>
@@ -85,6 +86,72 @@
       <div class="stat-label">MAX DRAWDOWN</div>
       <div class="stat-value" id="stat-drawdown">—</div>
       <div class="stat-sub">Worst peak-to-trough</div>
+    </div>
+
+  </div>
+
+  <!-- ── Regime + Risk tolerance ──────────────────────────────────────────── -->
+  <div class="regime-risk-row container">
+
+    <!-- Regime panel -->
+    <div class="panel regime-panel">
+      <div class="panel-header">
+        <span class="panel-title">MARKET REGIME</span>
+        <span class="regime-badge" id="regime-badge">—</span>
+      </div>
+      <div class="regime-body">
+        <div class="regime-main">
+          <div class="regime-label" id="regime-label">Detecting…</div>
+          <div class="regime-desc"  id="regime-desc">—</div>
+          <div class="regime-strategy-row">
+            <span class="regime-strategy-tag">ACTIVE STRATEGY</span>
+            <span class="regime-strategy-val" id="regime-strategy">—</span>
+          </div>
+        </div>
+        <div class="regime-indicators">
+          <div class="regime-ind">
+            <span class="ri-label">ADX</span>
+            <span class="ri-value" id="ri-adx">—</span>
+            <span class="ri-hint">trend strength</span>
+          </div>
+          <div class="regime-ind">
+            <span class="ri-label">30D VOL</span>
+            <span class="ri-value" id="ri-vol">—</span>
+            <span class="ri-hint">annualized</span>
+          </div>
+          <div class="regime-ind">
+            <span class="ri-label">BB WIDTH</span>
+            <span class="ri-value" id="ri-bbw">—</span>
+            <span class="ri-hint">volatility band</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Risk tolerance panel -->
+    <div class="panel risk-panel">
+      <div class="panel-header">
+        <span class="panel-title">RISK TOLERANCE</span>
+      </div>
+      <div class="risk-body">
+        <div class="risk-buttons">
+          <button class="risk-btn" data-tol="conservative" id="rtol-conservative">
+            <span class="risk-btn-name">CONSERVATIVE</span>
+            <span class="risk-btn-desc">3% stop · 10% target · 5% max pos</span>
+          </button>
+          <button class="risk-btn active" data-tol="moderate" id="rtol-moderate">
+            <span class="risk-btn-name">MODERATE</span>
+            <span class="risk-btn-desc">5% stop · 15% target · 10% max pos</span>
+          </button>
+          <button class="risk-btn" data-tol="aggressive" id="rtol-aggressive">
+            <span class="risk-btn-name">AGGRESSIVE</span>
+            <span class="risk-btn-desc">7% stop · 20% target · 15% max pos</span>
+          </button>
+        </div>
+        <div class="risk-note" id="risk-note">
+          Moderate: balanced stop-loss and position sizing. Reduces size 50% in high-volatility regimes.
+        </div>
+      </div>
     </div>
 
   </div>

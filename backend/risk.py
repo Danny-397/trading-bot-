@@ -1,27 +1,68 @@
 from datetime import datetime
 import pytz
 
-# ── Risk constants ────────────────────────────────────────────────────────────
-STOP_LOSS_PCT       = 0.05   # 5 %  — exit if position drops this much
-TAKE_PROFIT_PCT     = 0.15   # 15 % — exit if position gains this much
-MAX_POSITION_PCT    = 0.10   # 10 % — max portfolio allocation per stock
-MAX_DAILY_TRADES    = 10     # hard cap on orders per calendar day
-MIN_CASH_RESERVE    = 0.20   # 20 % — cash that must always be kept free
-MARKET_OPEN_H       = 9
-MARKET_OPEN_M       = 30
-MARKET_CLOSE_H      = 16
-MARKET_CLOSE_M      = 0
+# ── Risk profiles ─────────────────────────────────────────────────────────────
+# Each profile controls position sizing, stop/take levels, cash reserve,
+# and behaviour in high-volatility regimes.
+RISK_PROFILES = {
+    'conservative': {
+        'stop_loss_pct':    0.03,   # 3%  — tight stop, small losses
+        'take_profit_pct':  0.10,   # 10% — take gains early
+        'max_position_pct': 0.05,   # 5%  — small positions
+        'min_cash_reserve': 0.30,   # 30% — large cash cushion
+        'max_daily_trades': 6,
+        'vol_size_mult':    0.25,   # 25% normal size in HIGH_VOLATILITY
+        'trade_high_vol':   False,  # sit out HIGH_VOLATILITY regime entirely
+    },
+    'moderate': {
+        'stop_loss_pct':    0.05,   # 5%
+        'take_profit_pct':  0.15,   # 15%
+        'max_position_pct': 0.10,   # 10%
+        'min_cash_reserve': 0.20,   # 20%
+        'max_daily_trades': 10,
+        'vol_size_mult':    0.50,   # 50% normal size in HIGH_VOLATILITY
+        'trade_high_vol':   True,
+    },
+    'aggressive': {
+        'stop_loss_pct':    0.07,   # 7%  — wider stop
+        'take_profit_pct':  0.20,   # 20% — let winners run
+        'max_position_pct': 0.15,   # 15% — larger bets
+        'min_cash_reserve': 0.10,   # 10% — more deployed capital
+        'max_daily_trades': 15,
+        'vol_size_mult':    1.00,   # full size even in HIGH_VOLATILITY
+        'trade_high_vol':   True,
+    },
+}
+
+# Default profile (backward compatible)
+_DEFAULT = RISK_PROFILES['moderate']
+
+# Legacy module-level constants (kept for backward compatibility)
+STOP_LOSS_PCT    = _DEFAULT['stop_loss_pct']
+TAKE_PROFIT_PCT  = _DEFAULT['take_profit_pct']
+MAX_POSITION_PCT = _DEFAULT['max_position_pct']
+MAX_DAILY_TRADES = _DEFAULT['max_daily_trades']
+MIN_CASH_RESERVE = _DEFAULT['min_cash_reserve']
+MARKET_OPEN_H    = 9
+MARKET_OPEN_M    = 30
+MARKET_CLOSE_H   = 16
+MARKET_CLOSE_M   = 0
 
 _daily_trade_count = 0
 _last_trade_date   = None
 
 
+def get_risk_profile(tolerance: str = 'moderate') -> dict:
+    """Return the risk parameter dict for the given tolerance level."""
+    return RISK_PROFILES.get(tolerance, RISK_PROFILES['moderate'])
+
+
 def is_market_open() -> bool:
-    est  = pytz.timezone('America/New_York')
-    now  = datetime.now(est)
-    if now.weekday() >= 5:          # Saturday / Sunday
+    est   = pytz.timezone('America/New_York')
+    now   = datetime.now(est)
+    if now.weekday() >= 5:
         return False
-    open_  = now.replace(hour=MARKET_OPEN_H,  minute=MARKET_OPEN_M,  second=0, microsecond=0)
+    open_  = now.replace(hour=MARKET_OPEN_H, minute=MARKET_OPEN_M,  second=0, microsecond=0)
     close_ = now.replace(hour=MARKET_CLOSE_H, minute=MARKET_CLOSE_M, second=0, microsecond=0)
     return open_ <= now < close_
 
@@ -34,9 +75,10 @@ def _reset_if_new_day():
         _last_trade_date   = today
 
 
-def check_daily_trade_limit() -> bool:
+def check_daily_trade_limit(profile: dict = None) -> bool:
     _reset_if_new_day()
-    return _daily_trade_count < MAX_DAILY_TRADES
+    limit = (profile or _DEFAULT)['max_daily_trades']
+    return _daily_trade_count < limit
 
 
 def increment_trade_count():
@@ -50,39 +92,52 @@ def get_daily_trade_count() -> int:
     return _daily_trade_count
 
 
-def calculate_position_size(portfolio_value: float, price: float, cash: float) -> int:
-    """Returns number of whole shares to buy, respecting all size limits."""
-    max_by_pct  = portfolio_value * MAX_POSITION_PCT
-    usable_cash = cash - (portfolio_value * MIN_CASH_RESERVE)
+def calculate_position_size(portfolio_value: float, price: float, cash: float,
+                             profile: dict = None) -> int:
+    """
+    Return number of whole shares to buy.
+
+    Respects the profile's max_position_pct and min_cash_reserve.
+    Pass profile=get_risk_profile(tolerance) to override defaults.
+    """
+    p = profile or _DEFAULT
+    max_by_pct  = portfolio_value * p['max_position_pct']
+    usable_cash = cash - (portfolio_value * p['min_cash_reserve'])
     if usable_cash <= 0 or price <= 0:
         return 0
     spend  = min(max_by_pct, usable_cash)
     return max(int(spend / price), 0)
 
 
-def calculate_stop_loss(entry_price: float) -> float:
-    return round(entry_price * (1 - STOP_LOSS_PCT), 2)
+def calculate_stop_loss(entry_price: float, profile: dict = None) -> float:
+    pct = (profile or _DEFAULT)['stop_loss_pct']
+    return round(entry_price * (1 - pct), 2)
 
 
-def calculate_take_profit(entry_price: float) -> float:
-    return round(entry_price * (1 + TAKE_PROFIT_PCT), 2)
+def calculate_take_profit(entry_price: float, profile: dict = None) -> float:
+    pct = (profile or _DEFAULT)['take_profit_pct']
+    return round(entry_price * (1 + pct), 2)
 
 
-def check_stop_take(current_price: float, entry_price: float):
+def check_stop_take(current_price: float, entry_price: float,
+                    profile: dict = None) -> str | None:
     """Returns 'stop_loss', 'take_profit', or None."""
-    if current_price <= entry_price * (1 - STOP_LOSS_PCT):
+    p = profile or _DEFAULT
+    if current_price <= entry_price * (1 - p['stop_loss_pct']):
         return 'stop_loss'
-    if current_price >= entry_price * (1 + TAKE_PROFIT_PCT):
+    if current_price >= entry_price * (1 + p['take_profit_pct']):
         return 'take_profit'
     return None
 
 
-def can_trade(portfolio_value: float, cash: float) -> tuple[bool, str]:
+def can_trade(portfolio_value: float, cash: float,
+              profile: dict = None) -> tuple[bool, str]:
     """Master gate — returns (allowed, reason_string)."""
+    p = profile or _DEFAULT
     if not is_market_open():
         return False, 'Market is closed'
-    if not check_daily_trade_limit():
-        return False, f'Daily trade limit ({MAX_DAILY_TRADES}) reached'
-    if portfolio_value > 0 and (cash / portfolio_value) < MIN_CASH_RESERVE:
-        return False, f'Cash below {int(MIN_CASH_RESERVE*100)}% reserve minimum'
+    if not check_daily_trade_limit(p):
+        return False, f'Daily trade limit ({p["max_daily_trades"]}) reached'
+    if portfolio_value > 0 and (cash / portfolio_value) < p['min_cash_reserve']:
+        return False, f'Cash below {int(p["min_cash_reserve"]*100)}% reserve minimum'
     return True, 'OK'
