@@ -102,14 +102,14 @@ class TestCanTrade:
 
     def test_rejects_when_daily_limit_hit(self, monkeypatch):
         monkeypatch.setattr(risk, 'is_market_open', lambda: True)
-        monkeypatch.setattr(risk, 'check_daily_trade_limit', lambda: False)
+        monkeypatch.setattr(risk, 'check_daily_trade_limit', lambda *a, **kw: False)
         ok, reason = risk.can_trade(100_000, 50_000)
         assert ok is False
         assert 'limit' in reason.lower()
 
     def test_rejects_when_cash_below_reserve(self, monkeypatch):
         monkeypatch.setattr(risk, 'is_market_open', lambda: True)
-        monkeypatch.setattr(risk, 'check_daily_trade_limit', lambda: True)
+        monkeypatch.setattr(risk, 'check_daily_trade_limit', lambda *a, **kw: True)
         # Cash is 10% of portfolio — below the 20% reserve
         ok, reason = risk.can_trade(100_000, 10_000)
         assert ok is False
@@ -117,7 +117,7 @@ class TestCanTrade:
 
     def test_allows_trade_when_all_gates_pass(self, monkeypatch):
         monkeypatch.setattr(risk, 'is_market_open', lambda: True)
-        monkeypatch.setattr(risk, 'check_daily_trade_limit', lambda: True)
+        monkeypatch.setattr(risk, 'check_daily_trade_limit', lambda *a, **kw: True)
         ok, reason = risk.can_trade(100_000, 50_000)
         assert ok is True
         assert reason == 'OK'

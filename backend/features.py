@@ -99,8 +99,12 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
     loss     = (-delta).clip(lower=0)
     avg_gain = gain.ewm(com=13, adjust=True, min_periods=14).mean()
     avg_loss = loss.ewm(com=13, adjust=True, min_periods=14).mean()
-    rs       = avg_gain / avg_loss.replace(0, np.nan)
-    df['rsi14'] = 100 - (100 / (1 + rs))
+    rs           = avg_gain / avg_loss.replace(0, np.nan)
+    df['rsi14']  = 100 - (100 / (1 + rs))
+    # When avg_loss is 0 after warmup: pure uptrend → 100, no movement → 50
+    warmed = avg_gain.notna() & avg_loss.notna()
+    df.loc[warmed & (avg_loss == 0) & (avg_gain > 0),  'rsi14'] = 100.0
+    df.loc[warmed & (avg_loss == 0) & (avg_gain == 0), 'rsi14'] = 50.0
 
     # ── Momentum: MACD (12 / 26 / 9) ─────────────────────────────────────
     ema12             = close.ewm(span=12, adjust=False).mean()

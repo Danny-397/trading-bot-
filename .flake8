@@ -6,7 +6,16 @@ extend-ignore =
     W504,
     # allow single blank line between top-level functions in compact helper blocks
     E302,
-    E303
+    E303,
+    # aligned assignment style used throughout (intentional readability choice)
+    E221,
+    E272,
+    # spaces around = in keyword args (dataclass constructor alignment)
+    E251,
+    # continuation line over-indented for visual indent (function sig alignment)
+    E127,
+    # sys.path.insert before imports in test files (necessary for test path setup)
+    E402
 exclude =
     .git,
     __pycache__,
