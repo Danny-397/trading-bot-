@@ -48,6 +48,11 @@ jobs:
           ALPACA_SECRET_KEY: ci_dummy_secret
         run: python -c "import database; database.init_db(); print('DB init OK')"
 
+      - name: Unit tests (pytest)
+        run: |
+          pip install pytest
+          pytest tests/ -v --tb=short
+
   # ── Security: dependency audit ───────────────────────────────────────────
   security:
     name: Dependency security audit

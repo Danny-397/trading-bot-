@@ -36,6 +36,7 @@
           <option value="ma_crossover">Moving Average Crossover (SMA 20/50)</option>
           <option value="rsi">RSI Mean Reversion (14-period)</option>
           <option value="macd">MACD Momentum (12/26/9)</option>
+          <option value="ml" disabled>ML Model (Coming Soon)</option>
         </select>
       </div>
 
@@ -70,6 +71,17 @@
       </div>
     </div>
 
+    <!-- Walk-forward toggle -->
+    <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
+      <label class="toggle-wrap" for="bt-walkforward">
+        <input type="checkbox" id="bt-walkforward">
+        <span class="toggle-label">WALK-FORWARD TEST</span>
+      </label>
+      <span style="color: var(--text-muted); font-size: 11px;">
+        Trains on first 70% of range, evaluates only on final 30% (out-of-sample)
+      </span>
+    </div>
+
     <button class="btn btn-primary" id="bt-run" style="padding: 10px 28px; font-size: 12px; letter-spacing: 1.5px;">
       RUN BACKTEST
     </button>
@@ -80,6 +92,13 @@
 
   <!-- ── Results (hidden until backtest runs) ───────────────────────────── -->
   <div class="bt-results" id="bt-results">
+
+    <!-- Walk-forward info banner (shown only when walk-forward is on) -->
+    <div class="wf-banner" id="wf-banner" style="display:none;">
+      <strong>WALK-FORWARD MODE</strong> — metrics below cover only the out-of-sample test period
+      starting <span id="wf-split-date">—</span>. The prior 70% of the date range was used for
+      indicator warm-up only.
+    </div>
 
     <!-- Metrics grid -->
     <div class="metrics-grid">
@@ -137,6 +156,11 @@
       <div class="metric-card">
         <div class="metric-label">SPY BUY &amp; HOLD</div>
         <div class="metric-value" id="r-benchmark">—</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">CALMAR RATIO</div>
+        <div class="metric-value" id="r-calmar">—</div>
       </div>
 
     </div>

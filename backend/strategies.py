@@ -1,89 +1,42 @@
 """
-Three trading strategies, each returning (signal, price).
-Indicators are computed from scratch with pandas — no pandas-ta dependency,
-which makes the maths fully transparent and auditable.
+Trading strategy signal generators.
 
-signal values:  'BUY' | 'SELL' | 'HOLD' | None  (None = data error)
+Each strategy calls features.get_feature_df() to get a consistent,
+fully-computed feature DataFrame, then applies its signal logic on top.
+
+Adding the ML strategy
+----------------------
+1. Train your model and save it (e.g. joblib.dump(model, 'ml_model.pkl'))
+2. Load it at module startup (see ml_signal below)
+3. Replace the HOLD stub with: signal = model.predict(feature_row)[0]
+4. The feature matrix is already built — features.FEATURE_COLS is the
+   exact column list the model should be trained on.
+
+signal return values:  'BUY' | 'SELL' | 'HOLD' | None  (None = data error)
 """
 
 import logging
-import pandas as pd
-import numpy as np
-import yfinance as yf
+import features as feat
 
 logger = logging.getLogger(__name__)
 
 WATCHLIST = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'TSLA', 'JPM', 'SPY']
 
-
-# ── Data fetching ──────────────────────────────────────────────────────────────
-
-def _fetch(ticker: str, period: str = '6mo', interval: str = '1d') -> pd.DataFrame | None:
-    """Download OHLCV data from yfinance and normalise the column index."""
-    try:
-        df = yf.download(ticker, period=period, interval=interval,
-                         progress=False, auto_adjust=True)
-        if df.empty:
-            return None
-        # yfinance ≥ 0.2.40 returns MultiIndex columns even for single tickers
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        return df
-    except Exception as exc:
-        logger.error('yfinance error for %s: %s', ticker, exc)
-        return None
+VALID_STRATEGIES = ('ma_crossover', 'rsi', 'macd', 'ml')
 
 
-# ── Indicator maths ────────────────────────────────────────────────────────────
-
-def _sma(series: pd.Series, window: int) -> pd.Series:
-    return series.rolling(window=window).mean()
-
-
-def _rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    delta    = series.diff()
-    gain     = delta.clip(lower=0)
-    loss     = (-delta).clip(lower=0)
-    avg_gain = gain.ewm(com=period - 1, adjust=True, min_periods=period).mean()
-    avg_loss = loss.ewm(com=period - 1, adjust=True, min_periods=period).mean()
-    rs       = avg_gain / avg_loss.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
-
-
-def _macd(series: pd.Series, fast: int = 12, slow: int = 26,
-          signal: int = 9) -> tuple[pd.Series, pd.Series, pd.Series]:
-    ema_fast    = series.ewm(span=fast,   adjust=False).mean()
-    ema_slow    = series.ewm(span=slow,   adjust=False).mean()
-    macd_line   = ema_fast - ema_slow
-    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-    histogram   = macd_line - signal_line
-    return macd_line, signal_line, histogram
-
-
-# ── Strategy 1 — Moving Average Crossover ────────────────────────────────────
+# ── Strategy 1 — Moving Average Crossover ─────────────────────────────────────
 
 def ma_crossover_signal(ticker: str) -> tuple[str | None, float | None]:
-    """
-    BUY  when 20-day SMA crosses above 50-day SMA (golden cross).
-    SELL when 20-day SMA crosses below 50-day SMA (death cross).
-    """
-    df = _fetch(ticker, period='6mo')
-    if df is None or len(df) < 52:
+    df = feat.get_feature_df(ticker, period='6mo')
+    if df is None or len(df) < 2:
         return None, None
 
-    df = df.copy()
-    df['sma20'] = _sma(df['Close'], 20)
-    df['sma50'] = _sma(df['Close'], 50)
-    df.dropna(inplace=True)
-
-    if len(df) < 2:
-        return None, None
-
-    price     = float(df['Close'].iloc[-1])
-    prev20    = float(df['sma20'].iloc[-2])
-    prev50    = float(df['sma50'].iloc[-2])
-    curr20    = float(df['sma20'].iloc[-1])
-    curr50    = float(df['sma50'].iloc[-1])
+    price  = float(df['Close'].iloc[-1])
+    prev20 = float(df['sma20'].iloc[-2])
+    prev50 = float(df['sma50'].iloc[-2])
+    curr20 = float(df['sma20'].iloc[-1])
+    curr50 = float(df['sma50'].iloc[-1])
 
     if prev20 <= prev50 and curr20 > curr50:
         return 'BUY', price
@@ -95,23 +48,12 @@ def ma_crossover_signal(ticker: str) -> tuple[str | None, float | None]:
 # ── Strategy 2 — RSI Mean Reversion ──────────────────────────────────────────
 
 def rsi_signal(ticker: str) -> tuple[str | None, float | None]:
-    """
-    BUY  when RSI < 30 (oversold).
-    SELL when RSI > 70 (overbought).
-    """
-    df = _fetch(ticker, period='3mo')
-    if df is None or len(df) < 16:
-        return None, None
-
-    df = df.copy()
-    df['rsi'] = _rsi(df['Close'], 14)
-    df.dropna(inplace=True)
-
-    if df.empty:
+    df = feat.get_feature_df(ticker, period='6mo')
+    if df is None or df.empty:
         return None, None
 
     price   = float(df['Close'].iloc[-1])
-    rsi_val = float(df['rsi'].iloc[-1])
+    rsi_val = float(df['rsi14'].iloc[-1])
 
     if rsi_val < 30:
         return 'BUY', price
@@ -123,35 +65,49 @@ def rsi_signal(ticker: str) -> tuple[str | None, float | None]:
 # ── Strategy 3 — MACD Momentum ────────────────────────────────────────────────
 
 def macd_signal(ticker: str) -> tuple[str | None, float | None]:
-    """
-    BUY  when MACD crosses above signal line AND volume > 20-day average.
-    SELL when MACD crosses below signal line.
-    """
-    df = _fetch(ticker, period='6mo')
-    if df is None or len(df) < 35:
-        return None, None
-
-    df = df.copy()
-    df['macd'], df['signal_line'], df['hist'] = _macd(df['Close'])
-    df.dropna(inplace=True)
-
-    if len(df) < 2:
+    df = feat.get_feature_df(ticker, period='6mo')
+    if df is None or len(df) < 2:
         return None, None
 
     price      = float(df['Close'].iloc[-1])
-    avg_vol    = float(df['Volume'].tail(20).mean())
-    curr_vol   = float(df['Volume'].iloc[-1])
-    volume_ok  = curr_vol > avg_vol
+    volume_ok  = float(df['Volume'].iloc[-1]) > float(df['vol_ma20'].iloc[-1])
 
-    prev_m = float(df['macd'].iloc[-2])
-    prev_s = float(df['signal_line'].iloc[-2])
-    curr_m = float(df['macd'].iloc[-1])
-    curr_s = float(df['signal_line'].iloc[-1])
+    prev_m = float(df['macd_line'].iloc[-2])
+    prev_s = float(df['macd_signal'].iloc[-2])
+    curr_m = float(df['macd_line'].iloc[-1])
+    curr_s = float(df['macd_signal'].iloc[-1])
 
     if prev_m <= prev_s and curr_m > curr_s and volume_ok:
         return 'BUY', price
     if prev_m >= prev_s and curr_m < curr_s:
         return 'SELL', price
+    return 'HOLD', price
+
+
+# ── Strategy 4 — ML (stub) ────────────────────────────────────────────────────
+
+# ── HOW TO ACTIVATE THIS STRATEGY ─────────────────────────────────────────────
+# 1. Train your model on features.FEATURE_COLS and save it:
+#       import joblib
+#       joblib.dump(model, 'backend/ml_model.pkl')
+#
+# 2. Uncomment the two lines below to load the model at startup:
+#       import joblib
+#       _ml_model = joblib.load('ml_model.pkl')
+#
+# 3. In ml_signal(), replace `return 'HOLD', price` with:
+#       row = df[feat.FEATURE_COLS].iloc[-1].values.reshape(1, -1)
+#       signal = _ml_model.predict(row)[0]   # expects 'BUY', 'SELL', or 'HOLD'
+#       return signal, price
+# ──────────────────────────────────────────────────────────────────────────────
+
+def ml_signal(ticker: str) -> tuple[str | None, float | None]:
+    """ML strategy — returns HOLD until model is loaded (see comments above)."""
+    df = feat.get_feature_df(ticker, period='6mo')
+    if df is None or df.empty:
+        return None, None
+    price = float(df['Close'].iloc[-1])
+    logger.info('ML model not yet loaded — HOLD for %s', ticker)
     return 'HOLD', price
 
 
@@ -162,6 +118,7 @@ def get_signal(strategy: str, ticker: str) -> tuple[str | None, float | None]:
         'ma_crossover': ma_crossover_signal,
         'rsi':          rsi_signal,
         'macd':         macd_signal,
+        'ml':           ml_signal,
     }
     fn = dispatch.get(strategy)
     if fn is None:
@@ -170,39 +127,35 @@ def get_signal(strategy: str, ticker: str) -> tuple[str | None, float | None]:
     return fn(ticker)
 
 
-# ── Indicator snapshot for dashboard display ──────────────────────────────────
+# ── Indicator snapshot for dashboard ─────────────────────────────────────────
 
 def get_indicator_data(ticker: str, strategy: str) -> dict:
     """Returns current indicator values for the watchlist table."""
-    df = _fetch(ticker, period='6mo')
+    df = feat.get_feature_df(ticker, period='6mo')
     if df is None or df.empty:
         return {}
 
     result = {'price': round(float(df['Close'].iloc[-1]), 2)}
 
     if strategy == 'ma_crossover':
-        df = df.copy()
-        df['sma20'] = _sma(df['Close'], 20)
-        df['sma50'] = _sma(df['Close'], 50)
-        df.dropna(inplace=True)
-        if len(df):
-            result['sma20'] = round(float(df['sma20'].iloc[-1]), 2)
-            result['sma50'] = round(float(df['sma50'].iloc[-1]), 2)
+        result['sma20'] = round(float(df['sma20'].iloc[-1]), 2)
+        result['sma50'] = round(float(df['sma50'].iloc[-1]), 2)
 
     elif strategy == 'rsi':
-        df = df.copy()
-        df['rsi'] = _rsi(df['Close'], 14)
-        df.dropna(inplace=True)
-        if len(df):
-            result['rsi'] = round(float(df['rsi'].iloc[-1]), 2)
+        result['rsi'] = round(float(df['rsi14'].iloc[-1]), 2)
 
     elif strategy == 'macd':
-        df = df.copy()
-        df['macd'], df['signal_line'], df['hist'] = _macd(df['Close'])
-        df.dropna(inplace=True)
-        if len(df):
-            result['macd']      = round(float(df['macd'].iloc[-1]), 4)
-            result['signal']    = round(float(df['signal_line'].iloc[-1]), 4)
-            result['histogram'] = round(float(df['hist'].iloc[-1]), 4)
+        result['macd']      = round(float(df['macd_line'].iloc[-1]),   4)
+        result['signal']    = round(float(df['macd_signal'].iloc[-1]), 4)
+        result['histogram'] = round(float(df['macd_hist'].iloc[-1]),   4)
+
+    elif strategy == 'ml':
+        # Expose full feature vector so a future ML dashboard can display it
+        row = df.iloc[-1]
+        for col in feat.FEATURE_COLS:
+            if col in df.columns:
+                val = row[col]
+                if pd.notna(val):
+                    result[col] = round(float(val), 4)
 
     return result

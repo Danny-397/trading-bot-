@@ -1,135 +1,153 @@
 """
 Backtesting engine.
 
-Simulates a strategy against historical OHLCV data using the same signal logic
-as the live bot.  Enforces identical risk rules: 5% stop-loss, 15% take-profit,
-10% max position size, 20% cash reserve.
+Simulates a strategy against historical OHLCV data using the same signal
+logic as the live bot.  Enforces identical risk rules: 5% stop-loss,
+15% take-profit, 10% max position size, 20% cash reserve.
 
-Returns a structured result dict with performance metrics, equity curve, SPY
-benchmark, and full trade log.
+Walk-forward mode
+-----------------
+Pass walk_forward=True to run an out-of-sample evaluation.
+
+The date range is split 70 / 30.  The first 70% is the "in-sample"
+context window used only for indicator warmup.  Actual trades are only
+recorded in the final 30% — the out-of-sample test period.
+
+This matters most for the future ML strategy: when the model is added,
+it will be trained on the 70% portion and evaluated on the 30% portion,
+with this same infrastructure.  Non-ML strategies can use it now to
+guard against favourable in-sample curve-fitting.
+
+Returns a structured dict with:
+  metrics       — performance statistics
+  equity_curve  — [{date, value}] portfolio value over time
+  spy_curve     — SPY buy-and-hold benchmark scaled to same capital
+  trades        — last 200 closed trades
+  walk_forward  — {enabled, split_date} metadata (always present)
 """
 
+from __future__ import annotations
+
 import logging
+from datetime import datetime, timedelta
+
 import numpy as np
 import pandas as pd
-import yfinance as yf
+
+import features as feat
 
 logger = logging.getLogger(__name__)
 
-# ── helpers ───────────────────────────────────────────────────────────────────
 
-def _fetch(ticker: str, start: str, end: str) -> pd.DataFrame | None:
-    try:
-        df = yf.download(ticker, start=start, end=end,
-                         progress=False, auto_adjust=True)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        return df if not df.empty else None
-    except Exception as exc:
-        logger.error('fetch error %s: %s', ticker, exc)
-        return None
-
-
-def _sma(s, w):        return s.rolling(w).mean()
-
-def _rsi(s, p=14):
-    delta = s.diff()
-    gain  = delta.clip(lower=0)
-    loss  = (-delta).clip(lower=0)
-    ag    = gain.ewm(com=p - 1, adjust=True, min_periods=p).mean()
-    al    = loss.ewm(com=p - 1, adjust=True, min_periods=p).mean()
-    rs    = ag / al.replace(0, np.nan)
-    return 100 - 100 / (1 + rs)
-
-def _macd(s, fast=12, slow=26, sig=9):
-    ml = s.ewm(span=fast, adjust=False).mean() - s.ewm(span=slow, adjust=False).mean()
-    sl = ml.ewm(span=sig,  adjust=False).mean()
-    return ml, sl
-
+# ── Signal generation ──────────────────────────────────────────────────────────
 
 def _add_signals(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
-    """Append a 'signal' column: +1 = BUY, -1 = SELL, 0 = HOLD."""
-    df = df.copy()
-    close = df['Close']
+    """
+    Compute all indicators via features.compute_features(), then append a
+    'signal' column: +1 = BUY, -1 = SELL, 0 = HOLD.
+
+    When the ML strategy is added, replace the 'ml' branch stub with:
+        df['signal'] = model.predict(df[feat.FEATURE_COLS].values)
+    """
+    df = feat.compute_features(df)
+    df.dropna(inplace=True)
 
     if strategy == 'ma_crossover':
-        df['sma20'] = _sma(close, 20)
-        df['sma50'] = _sma(close, 50)
-        df.dropna(subset=['sma20', 'sma50'], inplace=True)
         buy  = (df['sma20'].shift(1) <= df['sma50'].shift(1)) & (df['sma20'] > df['sma50'])
         sell = (df['sma20'].shift(1) >= df['sma50'].shift(1)) & (df['sma20'] < df['sma50'])
 
     elif strategy == 'rsi':
-        df['rsi'] = _rsi(close)
-        df.dropna(subset=['rsi'], inplace=True)
-        buy  = df['rsi'] < 30
-        sell = df['rsi'] > 70
+        buy  = df['rsi14'] < 30
+        sell = df['rsi14'] > 70
 
     elif strategy == 'macd':
-        df['macd_line'], df['signal_line'] = _macd(close)
-        df.dropna(subset=['macd_line', 'signal_line'], inplace=True)
-        avg_vol = df['Volume'].rolling(20).mean()
         buy  = (
-            (df['macd_line'].shift(1) <= df['signal_line'].shift(1)) &
-            (df['macd_line'] > df['signal_line']) &
-            (df['Volume'] > avg_vol)
+            (df['macd_line'].shift(1) <= df['macd_signal'].shift(1)) &
+            (df['macd_line'] > df['macd_signal']) &
+            (df['Volume'] > df['vol_ma20'])
         )
         sell = (
-            (df['macd_line'].shift(1) >= df['signal_line'].shift(1)) &
-            (df['macd_line'] < df['signal_line'])
+            (df['macd_line'].shift(1) >= df['macd_signal'].shift(1)) &
+            (df['macd_line'] < df['macd_signal'])
         )
+
+    elif strategy == 'ml':
+        # ── ML backtest hook ───────────────────────────────────────────────
+        # When the model is ready, replace these two lines with:
+        #   preds = _ml_model.predict(df[feat.FEATURE_COLS].values)
+        #   buy  = pd.Series(preds == 1,  index=df.index)
+        #   sell = pd.Series(preds == -1, index=df.index)
+        # ──────────────────────────────────────────────────────────────────
+        buy  = pd.Series(False, index=df.index)
+        sell = pd.Series(False, index=df.index)
+
     else:
         buy  = pd.Series(False, index=df.index)
         sell = pd.Series(False, index=df.index)
 
     df['signal'] = 0
-    df.loc[buy,  'signal'] =  1
+    df.loc[buy,  'signal'] = 1
     df.loc[sell, 'signal'] = -1
     return df
 
 
-# ── main engine ───────────────────────────────────────────────────────────────
+# ── Main engine ────────────────────────────────────────────────────────────────
 
 def run_backtest(strategy: str, tickers: list[str],
                  start_date: str, end_date: str,
-                 initial_capital: float = 100_000.0) -> dict:
+                 initial_capital: float = 100_000.0,
+                 walk_forward: bool = False) -> dict:
     """
-    Runs a daily-bar backtest simulation.
+    Run a daily-bar backtest simulation.
 
-    Risk rules enforced identically to the live bot:
-      • 5%  stop-loss per position
-      • 15% take-profit per position
-      • 10% max portfolio allocation per ticker
-      • 20% minimum cash reserve
+    Parameters
+    ----------
+    strategy        : 'ma_crossover' | 'rsi' | 'macd' | 'ml'
+    tickers         : list of ticker symbols
+    start_date      : 'YYYY-MM-DD' — download data from this date
+    end_date        : 'YYYY-MM-DD' — download data until this date
+    initial_capital : starting cash
+    walk_forward    : if True, only record trades in the final 30% of the
+                      date range (out-of-sample test period)
     """
-    cash      = float(initial_capital)
-    positions = {}   # ticker -> {'shares': int, 'entry': float}
-    trades    = []
-    port_hist = []   # [{date, value}]
+    # ── Walk-forward split ─────────────────────────────────────────────────
+    split_date = None
+    if walk_forward:
+        s = datetime.strptime(start_date, '%Y-%m-%d')
+        e = datetime.strptime(end_date,   '%Y-%m-%d')
+        split_date = (s + timedelta(days=int((e - s).days * 0.70))).strftime('%Y-%m-%d')
 
-    # ── Prepare data ──────────────────────────────────────────────────────────
+    # ── Download and signal-label data ─────────────────────────────────────
     data = {}
     for ticker in tickers:
-        df = _fetch(ticker, start_date, end_date)
-        if df is None or len(df) < 30:
+        raw = feat.fetch_ohlcv(ticker, start=start_date, end=end_date)
+        if raw is None or len(raw) < 30:
             logger.warning('Skipping %s — insufficient data', ticker)
             continue
-        data[ticker] = _add_signals(df, strategy)
+        data[ticker] = _add_signals(raw, strategy)
 
     if not data:
         return {'error': 'No sufficient data for the selected tickers and date range.'}
 
     all_dates = sorted(set().union(*[set(df.index) for df in data.values()]))
 
-    # ── Simulation loop ───────────────────────────────────────────────────────
+    # ── Simulation loop ────────────────────────────────────────────────────
+    cash      = float(initial_capital)
+    positions = {}   # ticker -> {'shares': int, 'entry': float}
+    trades    = []
+    port_hist = []
+
     for date in all_dates:
-        # Current portfolio value (cash + mark-to-market positions)
+        # In walk-forward mode, skip the in-sample (training) window
+        recording = (split_date is None) or (date.strftime('%Y-%m-%d') >= split_date)
+
         port_val = cash
         for tkr, pos in positions.items():
             if tkr in data and date in data[tkr].index:
                 port_val += pos['shares'] * float(data[tkr].loc[date, 'Close'])
 
-        port_hist.append({'date': date.strftime('%Y-%m-%d'), 'value': round(port_val, 2)})
+        if recording:
+            port_hist.append({'date': date.strftime('%Y-%m-%d'), 'value': round(port_val, 2)})
 
         for ticker, df in data.items():
             if date not in df.index:
@@ -139,7 +157,7 @@ def run_backtest(strategy: str, tickers: list[str],
             price  = float(row['Close'])
             signal = int(row.get('signal', 0))
 
-            # ── Check stop-loss / take-profit on open position ────────────
+            # ── Stop-loss / take-profit on open position ───────────────────
             if ticker in positions:
                 pos    = positions[ticker]
                 entry  = pos['entry']
@@ -157,20 +175,21 @@ def run_backtest(strategy: str, tickers: list[str],
                     pnl     = (price - entry) * shares
                     pnl_pct = (price - entry) / entry * 100
                     cash   += shares * price
-                    trades.append({
-                        'date':    date.strftime('%Y-%m-%d'),
-                        'ticker':  ticker,
-                        'action':  'SELL',
-                        'price':   round(price, 2),
-                        'shares':  shares,
-                        'pnl':     round(pnl, 2),
-                        'pnl_pct': round(pnl_pct, 2),
-                        'reason':  reason,
-                    })
+                    if recording:
+                        trades.append({
+                            'date':    date.strftime('%Y-%m-%d'),
+                            'ticker':  ticker,
+                            'action':  'SELL',
+                            'price':   round(price,   2),
+                            'shares':  shares,
+                            'pnl':     round(pnl,     2),
+                            'pnl_pct': round(pnl_pct, 2),
+                            'reason':  reason,
+                        })
                     del positions[ticker]
 
-            # ── Buy signal ────────────────────────────────────────────────
-            elif signal == 1 and price > 0:
+            # ── Buy signal ─────────────────────────────────────────────────
+            elif signal == 1 and price > 0 and recording:
                 max_spend   = port_val * 0.10
                 usable_cash = cash - port_val * 0.20
                 if usable_cash > price:
@@ -190,7 +209,7 @@ def run_backtest(strategy: str, tickers: list[str],
                             'reason':  'buy_signal',
                         })
 
-    # ── Compute metrics ───────────────────────────────────────────────────────
+    # ── Performance metrics ────────────────────────────────────────────────
     final_value  = port_hist[-1]['value'] if port_hist else initial_capital
     total_return = (final_value - initial_capital) / initial_capital * 100
 
@@ -200,9 +219,9 @@ def run_backtest(strategy: str, tickers: list[str],
     pnls        = [t['pnl'] for t in sell_trades if t['pnl'] is not None]
 
     # Max drawdown
-    values  = [p['value'] for p in port_hist]
-    max_dd  = 0.0
-    peak    = values[0] if values else initial_capital
+    values = [p['value'] for p in port_hist]
+    max_dd = 0.0
+    peak   = values[0] if values else initial_capital
     for v in values:
         if v > peak:
             peak = v
@@ -219,19 +238,30 @@ def run_backtest(strategy: str, tickers: list[str],
         if std > 0:
             sharpe = round((rets.mean() - 0.04 / 252) / std * np.sqrt(252), 2)
 
+    # Calmar ratio (annualised return / max drawdown)
+    calmar = 0.0
+    if max_dd > 0:
+        years  = max(len(values) / 252, 1 / 252)
+        ann_r  = (final_value / initial_capital) ** (1 / years) - 1
+        calmar = round(ann_r / (max_dd / 100), 2)
+
     # SPY buy-and-hold benchmark
-    spy_df           = _fetch('SPY', start_date, end_date)
+    spy_df           = feat.fetch_ohlcv('SPY', start=start_date, end=end_date)
     benchmark_return = 0.0
     spy_curve        = []
     if spy_df is not None and len(spy_df) > 1:
-        spy_start        = float(spy_df['Close'].iloc[0])
-        spy_end          = float(spy_df['Close'].iloc[-1])
-        benchmark_return = (spy_end - spy_start) / spy_start * 100
-        spy_curve        = [
-            {'date': d.strftime('%Y-%m-%d'),
-             'value': round(initial_capital * float(v) / spy_start, 2)}
-            for d, v in spy_df['Close'].items()
-        ]
+        # Align SPY to the simulation window if walk_forward
+        if walk_forward and split_date:
+            spy_df = spy_df[spy_df.index >= pd.Timestamp(split_date)]
+        if len(spy_df) > 1:
+            spy_start        = float(spy_df['Close'].iloc[0])
+            spy_end          = float(spy_df['Close'].iloc[-1])
+            benchmark_return = (spy_end - spy_start) / spy_start * 100
+            spy_curve        = [
+                {'date': d.strftime('%Y-%m-%d'),
+                 'value': round(initial_capital * float(v) / spy_start, 2)}
+                for d, v in spy_df['Close'].items()
+            ]
 
     return {
         'metrics': {
@@ -239,6 +269,7 @@ def run_backtest(strategy: str, tickers: list[str],
             'win_rate':         round(len(wins) / len(sell_trades) * 100, 1) if sell_trades else 0,
             'max_drawdown':     round(max_dd, 2),
             'sharpe_ratio':     sharpe,
+            'calmar_ratio':     calmar,
             'total_trades':     len(sell_trades),
             'winning_trades':   len(wins),
             'losing_trades':    len(losses),
@@ -252,5 +283,9 @@ def run_backtest(strategy: str, tickers: list[str],
         },
         'equity_curve': port_hist,
         'spy_curve':    spy_curve,
-        'trades':       trades[-200:],   # last 200 for the table
+        'trades':       trades[-200:],
+        'walk_forward': {
+            'enabled':    walk_forward,
+            'split_date': split_date,
+        },
     }

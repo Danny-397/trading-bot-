@@ -378,6 +378,38 @@ select option { background: var(--surface); }
 }
 .ticker-chip.selected { border-color: var(--blue); color: var(--blue); background: var(--blue-dim); }
 
+/* Walk-forward toggle */
+.toggle-wrap {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+  cursor:      pointer;
+  user-select: none;
+}
+.toggle-wrap input[type="checkbox"] {
+  width:  14px;
+  height: 14px;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+.toggle-label {
+  font-size:     11px;
+  letter-spacing: 1px;
+  color:         var(--blue);
+}
+
+/* Walk-forward info banner */
+.wf-banner {
+  background:    var(--blue-dim);
+  border:        1px solid var(--blue);
+  border-radius: var(--radius);
+  padding:       10px 16px;
+  font-size:     11px;
+  color:         var(--blue);
+  margin-bottom: 16px;
+  line-height:   1.6;
+}
+
 /* Backtest results */
 .bt-results { display: none; margin: 0 20px 20px; }
 .bt-results.visible { display: block; }

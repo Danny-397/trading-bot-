@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 import backtest as backtester
 import bot
 import database
+import features  # noqa: F401 — imported so startup errors surface early
 import risk
 import strategies
 
@@ -57,7 +58,7 @@ def get_status():
 def start():
     data     = request.get_json() or {}
     strategy = data.get('strategy', 'ma_crossover')
-    if strategy not in ('ma_crossover', 'rsi', 'macd'):
+    if strategy not in strategies.VALID_STRATEGIES:
         return jsonify({'error': 'Invalid strategy'}), 400
     database.update_bot_state(strategy=strategy)
     success, msg = bot.start_bot()
@@ -74,7 +75,7 @@ def stop():
 def set_strategy():
     data     = request.get_json() or {}
     strategy = data.get('strategy')
-    if strategy not in ('ma_crossover', 'rsi', 'macd'):
+    if strategy not in strategies.VALID_STRATEGIES:
         return jsonify({'error': 'Invalid strategy'}), 400
     database.update_bot_state(strategy=strategy)
     return jsonify({'success': True, 'strategy': strategy})
@@ -105,7 +106,7 @@ def activity():
 def indicators():
     """Current indicator values for all watchlist tickers."""
     strategy = request.args.get('strategy', 'ma_crossover')
-    if strategy not in ('ma_crossover', 'rsi', 'macd'):
+    if strategy not in strategies.VALID_STRATEGIES:
         return jsonify({'error': 'Invalid strategy'}), 400
     result = {}
     for ticker in strategies.WATCHLIST:
@@ -129,8 +130,9 @@ def run_backtest():
                                (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d'))
     end_date        = data.get('end_date', datetime.now().strftime('%Y-%m-%d'))
     initial_capital = float(data.get('initial_capital', 100_000))
+    walk_forward    = bool(data.get('walk_forward', False))
 
-    if strategy not in ('ma_crossover', 'rsi', 'macd'):
+    if strategy not in strategies.VALID_STRATEGIES:
         return jsonify({'error': 'Invalid strategy'}), 400
     if not (1_000 <= initial_capital <= 10_000_000):
         return jsonify({'error': 'Capital must be between $1,000 and $10,000,000'}), 400
@@ -138,7 +140,7 @@ def run_backtest():
         return jsonify({'error': 'At least one ticker required'}), 400
 
     result = backtester.run_backtest(
-        strategy, tickers, start_date, end_date, initial_capital
+        strategy, tickers, start_date, end_date, initial_capital, walk_forward
     )
     return jsonify(result)
 

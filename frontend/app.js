@@ -326,6 +326,7 @@ if (document.body.dataset.page === 'backtest') {
       start_date:      el('bt-start').value,
       end_date:        el('bt-end').value,
       initial_capital: parseFloat(el('bt-capital').value) || 100_000,
+      walk_forward:    el('bt-walkforward')?.checked ?? false,
     };
 
     try {
@@ -370,6 +371,19 @@ if (document.body.dataset.page === 'backtest') {
     el('r-best').innerHTML        = `<span class="positive">${fmt$(m.best_trade)}</span>`;
     el('r-worst').innerHTML       = `<span class="negative">${fmt$(m.worst_trade)}</span>`;
     el('r-benchmark').innerHTML   = `<span class="${colorClass(m.benchmark_return)}">${fmtPct(m.benchmark_return)}</span>`;
+    el('r-calmar').innerHTML      = `<span class="${colorClass(m.calmar_ratio)}">${(m.calmar_ratio ?? 0).toFixed(2)}</span>`;
+
+    // Walk-forward banner
+    const wf = result.walk_forward || {};
+    const banner = el('wf-banner');
+    if (banner) {
+      if (wf.enabled && wf.split_date) {
+        el('wf-split-date').textContent = wf.split_date;
+        banner.style.display = 'block';
+      } else {
+        banner.style.display = 'none';
+      }
+    }
 
     // Chart
     renderBtChart(result.equity_curve, result.spy_curve, payload.initial_capital);
