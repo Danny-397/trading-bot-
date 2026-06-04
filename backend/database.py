@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from datetime import datetime
+import numpy as np
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tradebot.db')
 
@@ -125,6 +126,43 @@ def update_bot_state(is_running=None, strategy=None, started_at=None, initial_va
         conn.execute('UPDATE bot_state SET initial_value = ? WHERE id = 1', (initial_value,))
     conn.commit()
     conn.close()
+
+
+def get_live_metrics():
+    """Computes Sharpe ratio and max drawdown from the live portfolio snapshot history."""
+    conn = get_connection()
+    rows = conn.execute(
+        'SELECT portfolio_value FROM portfolio_snapshots ORDER BY timestamp ASC'
+    ).fetchall()
+    conn.close()
+
+    if len(rows) < 2:
+        return {'sharpe_ratio': 0.0, 'max_drawdown': 0.0}
+
+    values = [r['portfolio_value'] for r in rows]
+
+    # Max drawdown
+    max_dd = 0.0
+    peak = values[0]
+    for v in values:
+        if v > peak:
+            peak = v
+        dd = (peak - v) / peak * 100 if peak > 0 else 0
+        if dd > max_dd:
+            max_dd = dd
+
+    # Sharpe ratio (annualised, 4% risk-free rate)
+    arr = np.array(values, dtype=float)
+    rets = np.diff(arr) / arr[:-1]
+    std = float(rets.std())
+    sharpe = 0.0
+    if std > 0:
+        sharpe = round((float(rets.mean()) - 0.04 / 252) / std * np.sqrt(252), 2)
+
+    return {
+        'sharpe_ratio': sharpe,
+        'max_drawdown': round(max_dd, 2),
+    }
 
 
 def get_performance_metrics(strategy=None):

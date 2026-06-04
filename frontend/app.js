@@ -51,7 +51,7 @@ if (document.body.dataset.page === 'dashboard') {
         });
       }
     } catch (e) {
-      console.error(e);
+      // swallow — refreshAll will reflect the true state
     } finally {
       btn.disabled = false;
       await refreshAll();
@@ -121,8 +121,9 @@ if (document.body.dataset.page === 'dashboard') {
   }
 
   function updateStats(status) {
-    const p = status.portfolio || {};
-    const m = status.metrics   || {};
+    const p  = status.portfolio    || {};
+    const m  = status.metrics      || {};
+    const lm = status.live_metrics || {};
 
     setText('stat-value', fmt$(p.portfolio_value ?? 0));
     const ret = parseFloat(p.total_return ?? 0);
@@ -139,6 +140,14 @@ if (document.body.dataset.page === 'dashboard') {
     const max = status.max_daily    ?? 10;
     const sub = el('stat-positions-sub');
     if (sub) sub.textContent = `${dt} / ${max} daily trades used`;
+
+    const sharpe = parseFloat(lm.sharpe_ratio ?? 0);
+    setText('stat-sharpe', sharpe.toFixed(2));
+    setClass('stat-sharpe', colorClass(sharpe));
+
+    const dd = parseFloat(lm.max_drawdown ?? 0);
+    setText('stat-drawdown', '-' + dd.toFixed(2) + '%');
+    setClass('stat-drawdown', dd > 0 ? 'negative' : '');
   }
 
   function updatePositions(positions) {
@@ -333,7 +342,6 @@ if (document.body.dataset.page === 'backtest') {
       renderResults(result, payload);
     } catch (e) {
       alert('Request failed. Is the backend running?');
-      console.error(e);
     } finally {
       btn.disabled  = false;
       btn.innerHTML = 'RUN BACKTEST';

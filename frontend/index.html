@@ -11,6 +11,11 @@
 </head>
 <body data-page="dashboard">
 
+  <!-- ── Paper trading safety banner ──────────────────────────────────── -->
+  <div class="paper-banner">
+    ⚠ PAPER TRADING ONLY — This bot never trades real money
+  </div>
+
   <!-- ── Navigation ─────────────────────────────────────────────────────── -->
   <nav class="navbar">
     <div class="nav-brand">
@@ -67,6 +72,18 @@
       <div class="stat-label">ACTIVE POSITIONS</div>
       <div class="stat-value" id="stat-positions">0</div>
       <div class="stat-sub" id="stat-positions-sub">0 / 10 daily trades used</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">SHARPE RATIO</div>
+      <div class="stat-value" id="stat-sharpe">—</div>
+      <div class="stat-sub">Risk-adjusted return</div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">MAX DRAWDOWN</div>
+      <div class="stat-value" id="stat-drawdown">—</div>
+      <div class="stat-sub">Worst peak-to-trough</div>
     </div>
 
   </div>

@@ -34,20 +34,22 @@ database.init_db()
 
 @app.route('/api/status')
 def get_status():
-    state    = database.get_bot_state()
-    strategy = state['strategy'] if state else 'ma_crossover'
-    portfolio = bot.get_portfolio_summary()
-    metrics  = database.get_performance_metrics(strategy)
+    state        = database.get_bot_state()
+    strategy     = state['strategy'] if state else 'ma_crossover'
+    portfolio    = bot.get_portfolio_summary()
+    metrics      = database.get_performance_metrics(strategy)
+    live_metrics = database.get_live_metrics()
 
     return jsonify({
-        'is_running':   bot.is_running(),
-        'strategy':     strategy,
-        'started_at':   state.get('started_at') if state else None,
-        'market_open':  risk.is_market_open(),
-        'daily_trades': risk.get_daily_trade_count(),
-        'max_daily':    risk.MAX_DAILY_TRADES,
-        'portfolio':    portfolio,
-        'metrics':      metrics,
+        'is_running':    bot.is_running(),
+        'strategy':      strategy,
+        'started_at':    state.get('started_at') if state else None,
+        'market_open':   risk.is_market_open(),
+        'daily_trades':  risk.get_daily_trade_count(),
+        'max_daily':     risk.MAX_DAILY_TRADES,
+        'portfolio':     portfolio,
+        'metrics':       metrics,
+        'live_metrics':  live_metrics,
     })
 
 
