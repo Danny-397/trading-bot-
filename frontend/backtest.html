@@ -56,6 +56,16 @@
         <input class="input" type="number" id="bt-capital" value="100000" min="1000" max="10000000" step="1000">
       </div>
 
+      <div class="form-field">
+        <label>COMMISSION (% per side)</label>
+        <input class="input" type="number" id="bt-commission" value="0.10" min="0" max="5" step="0.01">
+      </div>
+
+      <div class="form-field">
+        <label>SLIPPAGE (% per side)</label>
+        <input class="input" type="number" id="bt-slippage" value="0.05" min="0" max="5" step="0.01">
+      </div>
+
     </div>
 
     <!-- Ticker selection -->
@@ -180,6 +190,18 @@
         <div class="metric-value" id="r-calmar">—</div>
       </div>
 
+      <div class="metric-card highlight-kelly">
+        <div class="metric-label">KELLY FRACTION</div>
+        <div class="metric-value" id="r-kelly">—</div>
+        <div class="metric-sub">Optimal position size</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-label">GROSS RETURN</div>
+        <div class="metric-value" id="r-gross">—</div>
+        <div class="metric-sub" id="r-costs-sub">Pre transaction costs</div>
+      </div>
+
     </div>
 
     <!-- Equity curve chart -->
@@ -189,6 +211,45 @@
       </div>
       <div class="chart-wrap" style="height: 320px;">
         <canvas id="bt-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Monte Carlo validation -->
+    <div class="panel mc-panel" id="mc-panel" style="margin-bottom: 12px; display:none;">
+      <div class="panel-header">
+        <span class="panel-title">MONTE CARLO VALIDATION — 1,000 RANDOM PATHS</span>
+        <span class="mc-rank-badge" id="mc-rank-badge">—</span>
+      </div>
+      <div class="mc-body">
+
+        <!-- Headline stat -->
+        <div class="mc-headline" id="mc-headline">
+          Running simulation…
+        </div>
+
+        <!-- Fan chart -->
+        <div class="chart-wrap" style="height: 300px; margin: 0 0 16px;">
+          <canvas id="mc-chart"></canvas>
+        </div>
+
+        <!-- Distribution table -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <div class="mc-dist-title">RETURN DISTRIBUTION</div>
+            <table class="data-table" style="font-size:11px;">
+              <thead><tr><th>PERCENTILE</th><th>RETURN</th></tr></thead>
+              <tbody id="mc-return-tbody"></tbody>
+            </table>
+          </div>
+          <div>
+            <div class="mc-dist-title">SHARPE DISTRIBUTION</div>
+            <table class="data-table" style="font-size:11px;">
+              <thead><tr><th>PERCENTILE</th><th>SHARPE</th></tr></thead>
+              <tbody id="mc-sharpe-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
     </div>
 

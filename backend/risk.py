@@ -92,6 +92,34 @@ def get_daily_trade_count() -> int:
     return _daily_trade_count
 
 
+def calculate_position_size_kelly(portfolio_value: float, price: float, cash: float,
+                                   kelly_fraction: float | None,
+                                   profile: dict = None) -> int:
+    """
+    Kelly Criterion position sizing.
+
+    Uses the Kelly fraction (derived from win rate + odds ratio of past trades)
+    instead of a fixed percentage, capped at the profile's max_position_pct
+    as a hard safety limit.
+
+    Falls back to calculate_position_size() when kelly_fraction is None
+    (insufficient trade history — fewer than 10 closed trades).
+    """
+    if kelly_fraction is None or kelly_fraction <= 0:
+        return calculate_position_size(portfolio_value, price, cash, profile)
+
+    p = profile or _DEFAULT
+    # Kelly fraction as % of portfolio, capped at the profile's hard limit
+    effective_pct = min(kelly_fraction, p['max_position_pct'])
+    max_spend     = portfolio_value * effective_pct
+    usable_cash   = cash - (portfolio_value * p['min_cash_reserve'])
+
+    if usable_cash <= 0 or price <= 0:
+        return 0
+    spend = min(max_spend, usable_cash)
+    return max(int(spend / price), 0)
+
+
 def calculate_position_size(portfolio_value: float, price: float, cash: float,
                              profile: dict = None) -> int:
     """

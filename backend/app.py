@@ -56,25 +56,27 @@ VALID_STRATEGIES = strategies.VALID_STRATEGIES + ('adaptive',)
 @app.route('/api/status')
 def get_status():
     state         = database.get_bot_state()
-    strategy      = state['strategy']      if state else 'adaptive'
+    strategy      = state['strategy']       if state else 'adaptive'
     risk_tol      = state['risk_tolerance'] if state else 'moderate'
     portfolio     = bot.get_portfolio_summary()
     metrics       = database.get_performance_metrics(strategy)
     live_metrics  = database.get_live_metrics()
     regime_info   = bot.get_last_regime()
+    kelly         = database.compute_kelly_fraction(strategy)
 
     return jsonify({
-        'is_running':     bot.is_running(),
-        'strategy':       strategy,
-        'risk_tolerance': risk_tol,
-        'started_at':     state.get('started_at') if state else None,
-        'market_open':    risk.is_market_open(),
-        'daily_trades':   risk.get_daily_trade_count(),
-        'max_daily':      risk.get_risk_profile(risk_tol)['max_daily_trades'],
-        'portfolio':      portfolio,
-        'metrics':        metrics,
-        'live_metrics':   live_metrics,
-        'regime':         regime_info,
+        'is_running':      bot.is_running(),
+        'strategy':        strategy,
+        'risk_tolerance':  risk_tol,
+        'started_at':      state.get('started_at') if state else None,
+        'market_open':     risk.is_market_open(),
+        'daily_trades':    risk.get_daily_trade_count(),
+        'max_daily':       risk.get_risk_profile(risk_tol)['max_daily_trades'],
+        'portfolio':       portfolio,
+        'metrics':         metrics,
+        'live_metrics':    live_metrics,
+        'regime':          regime_info,
+        'kelly_fraction':  round(kelly * 100, 2) if kelly else None,
     })
 
 
@@ -193,6 +195,8 @@ def run_backtest():
     initial_capital = float(data.get('initial_capital', 100_000))
     walk_forward    = bool(data.get('walk_forward', False))
     risk_tolerance  = data.get('risk_tolerance', 'moderate')
+    commission_pct  = float(data.get('commission_pct', 0.001))
+    slippage_pct    = float(data.get('slippage_pct',   0.0005))
 
     if strategy not in VALID_STRATEGIES:
         return jsonify({'error': 'Invalid strategy'}), 400
@@ -202,10 +206,15 @@ def run_backtest():
         return jsonify({'error': 'At least one ticker required'}), 400
     if risk_tolerance not in ('conservative', 'moderate', 'aggressive'):
         return jsonify({'error': 'Invalid risk tolerance'}), 400
+    if not (0 <= commission_pct <= 0.05):
+        return jsonify({'error': 'Commission must be between 0% and 5%'}), 400
+    if not (0 <= slippage_pct <= 0.05):
+        return jsonify({'error': 'Slippage must be between 0% and 5%'}), 400
 
     result = backtester.run_backtest(
         strategy, tickers, start_date, end_date,
-        initial_capital, walk_forward, risk_tolerance
+        initial_capital, walk_forward, risk_tolerance,
+        commission_pct, slippage_pct,
     )
     return jsonify(result)
 

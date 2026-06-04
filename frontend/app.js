@@ -391,6 +391,8 @@ if (document.body.dataset.page === 'backtest') {
       initial_capital: parseFloat(el('bt-capital').value) || 100_000,
       walk_forward:    el('bt-walkforward')?.checked ?? false,
       risk_tolerance:  riskRadio ? riskRadio.value : 'moderate',
+      commission_pct:  (parseFloat(el('bt-commission')?.value) || 0.10) / 100,
+      slippage_pct:    (parseFloat(el('bt-slippage')?.value)   || 0.05) / 100,
     };
 
     try {
@@ -435,7 +437,27 @@ if (document.body.dataset.page === 'backtest') {
     el('r-best').innerHTML        = `<span class="positive">${fmt$(m.best_trade)}</span>`;
     el('r-worst').innerHTML       = `<span class="negative">${fmt$(m.worst_trade)}</span>`;
     el('r-benchmark').innerHTML   = `<span class="${colorClass(m.benchmark_return)}">${fmtPct(m.benchmark_return)}</span>`;
-    el('r-calmar').innerHTML      = `<span class="${colorClass(m.calmar_ratio)}">${(m.calmar_ratio ?? 0).toFixed(2)}</span>`;
+    el('r-calmar').innerHTML  = `<span class="${colorClass(m.calmar_ratio)}">${(m.calmar_ratio ?? 0).toFixed(2)}</span>`;
+
+    // Kelly fraction
+    const kellyEl = el('r-kelly');
+    if (kellyEl) {
+      if (m.kelly_fraction != null) {
+        kellyEl.innerHTML = `<span class="${colorClass(m.kelly_fraction)}">${m.kelly_fraction.toFixed(1)}%</span>`;
+      } else {
+        kellyEl.innerHTML = '<span class="neutral">N/A</span>';
+        const ksub = kellyEl.nextElementSibling;
+        if (ksub) ksub.textContent = '< 10 trades (using fixed sizing)';
+      }
+    }
+
+    // Gross return vs net
+    const grossRetClass = colorClass(m.gross_return);
+    el('r-gross').innerHTML = `<span class="${grossRetClass}">${fmtPct(m.gross_return)}</span>`;
+    const costsSub = el('r-costs-sub');
+    if (costsSub && m.total_costs != null) {
+      costsSub.textContent = `Costs: ${fmt$(m.total_costs)} total`;
+    }
 
     // Walk-forward banner
     const wf = result.walk_forward || {};
@@ -451,6 +473,9 @@ if (document.body.dataset.page === 'backtest') {
 
     // Chart
     renderBtChart(result.equity_curve, result.spy_curve, payload.initial_capital);
+
+    // Monte Carlo
+    renderMonteCarlo(result.monte_carlo, result.equity_curve, payload.initial_capital);
 
     // Regime breakdown
     renderRegimeBreakdown(result.regime_breakdown || {});
@@ -543,6 +568,163 @@ if (document.body.dataset.page === 'backtest') {
         },
       },
     });
+  }
+
+  let mcChart = null;
+
+  function renderMonteCarlo(mc, equityCurve, initialCapital) {
+    const panel = el('mc-panel');
+    if (!panel || !mc || !mc.enabled) {
+      if (panel) panel.style.display = 'none';
+      return;
+    }
+    panel.style.display = 'block';
+
+    // ── Headline ────────────────────────────────────────────────────────────
+    const pct     = mc.actual_percentile;
+    const sPct    = mc.sharpe_percentile;
+    const rankEl  = el('mc-rank-badge');
+    const headEl  = el('mc-headline');
+
+    if (rankEl) {
+      rankEl.textContent = `${pct.toFixed(0)}th percentile`;
+      rankEl.className   = 'mc-rank-badge ' +
+        (pct >= 75 ? 'strong' : pct >= 40 ? 'moderate' : 'weak');
+    }
+
+    if (headEl) {
+      const strength = pct >= 75
+        ? 'statistically meaningful'
+        : pct >= 40 ? 'within normal random variation' : 'weaker than most random paths';
+      headEl.innerHTML =
+        `Your strategy's return ranks in the <strong>${pct.toFixed(0)}th percentile</strong> of ` +
+        `${mc.n_simulations.toLocaleString()} random resampled paths — ` +
+        `<strong>${strength}</strong>. ` +
+        `Its Sharpe ratio ranks in the <strong>${sPct.toFixed(0)}th percentile</strong> of simulated Sharpe ratios.`;
+    }
+
+    // ── Fan chart ────────────────────────────────────────────────────────────
+    const fan   = mc.fan_chart;
+    const ctx   = el('mc-chart');
+    if (!ctx || !fan) return;
+
+    // Align actual equity curve to fan chart dates
+    const actualMap = {};
+    (equityCurve || []).forEach(p => { actualMap[p.date] = p.value; });
+    const actualData = fan.dates.map(d => actualMap[d] ?? null);
+
+    if (mcChart) { mcChart.destroy(); mcChart = null; }
+
+    mcChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: fan.dates,
+        datasets: [
+          // Outer band (P95 fills down to P5)
+          {
+            label: 'P95',
+            data:  fan.p95,
+            fill:  1,
+            borderColor: 'transparent',
+            backgroundColor: 'rgba(88,166,255,0.06)',
+            pointRadius: 0,
+          },
+          {
+            label: 'P5',
+            data:  fan.p5,
+            fill:  false,
+            borderColor: 'transparent',
+            pointRadius: 0,
+          },
+          // Inner band (P75 fills down to P25)
+          {
+            label: 'P75',
+            data:  fan.p75,
+            fill:  3,
+            borderColor: 'transparent',
+            backgroundColor: 'rgba(88,166,255,0.11)',
+            pointRadius: 0,
+          },
+          {
+            label: 'P25',
+            data:  fan.p25,
+            fill:  false,
+            borderColor: 'transparent',
+            pointRadius: 0,
+          },
+          // Median
+          {
+            label: 'Median (P50)',
+            data:  fan.p50,
+            fill:  false,
+            borderColor: 'rgba(88,166,255,0.35)',
+            borderDash: [5, 4],
+            borderWidth: 1.5,
+            pointRadius: 0,
+          },
+          // Actual strategy
+          {
+            label: 'Your Strategy',
+            data:  actualData,
+            fill:  false,
+            borderColor: '#58a6ff',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            tension: 0.2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top',
+            labels: {
+              filter: item => ['Median (P50)', 'Your Strategy', 'P95', 'P25'].includes(item.text),
+              color: '#7d8590',
+              font: { family: 'monospace', size: 10 },
+              boxWidth: 16,
+            },
+          },
+          tooltip: {
+            backgroundColor: '#161b22',
+            borderColor: '#21262d',
+            borderWidth: 1,
+            titleColor: '#7d8590',
+            bodyColor: '#e6edf3',
+            callbacks: {
+              label: c => {
+                if (['P5', 'P75'].includes(c.dataset.label)) return null;
+                return ` ${c.dataset.label}: ${fmt$(c.parsed.y)}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: { ticks: { color: '#7d8590', maxTicksLimit: 8, font: { family: 'monospace', size: 10 } }, grid: { color: '#21262d' } },
+          y: { ticks: { color: '#7d8590', callback: v => '$' + v.toLocaleString(), font: { family: 'monospace', size: 10 } }, grid: { color: '#21262d' } },
+        },
+      },
+    });
+
+    // ── Distribution tables ──────────────────────────────────────────────────
+    const dist = mc.return_distribution;
+    const shar = mc.sharpe_distribution;
+    const pctiles = [['5th', 'p5'], ['25th', 'p25'], ['50th (median)', 'p50'], ['75th', 'p75'], ['95th', 'p95']];
+
+    const rTbody = el('mc-return-tbody');
+    const sTbody = el('mc-sharpe-tbody');
+
+    if (rTbody) rTbody.innerHTML = pctiles.map(([lbl, key]) =>
+      `<tr><td>${lbl}</td><td class="${colorClass(dist[key])}">${fmtPct(dist[key])}</td></tr>`
+    ).join('');
+
+    if (sTbody) sTbody.innerHTML = pctiles.map(([lbl, key]) =>
+      `<tr><td>${lbl}</td><td class="${colorClass(shar[key])}">${(shar[key] ?? 0).toFixed(2)}</td></tr>`
+    ).join('');
   }
 
   function renderRegimeBreakdown(breakdown) {

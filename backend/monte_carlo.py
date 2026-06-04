@@ -1,0 +1,128 @@
+"""
+Monte Carlo simulation for backtest result validation.
+
+Takes the daily return sequence from a completed backtest, resamples it
+1,000 times with replacement (bootstrap), and asks: where does the actual
+result sit in the distribution of random paths?
+
+If your strategy's Sharpe of 1.4 ranks in the 92nd percentile of 1,000
+random shuffles, that's statistically meaningful.  If it ranks in the 53rd
+percentile, the strategy is essentially indistinguishable from random.
+
+Returns
+-------
+A dict containing:
+  actual_return_pct     — the strategy's actual total return
+  actual_percentile     — percentile rank vs simulated paths  (0–100)
+  sharpe_percentile     — percentile rank of actual Sharpe vs simulated
+  return_distribution   — {p5, p25, p50, p75, p95} of simulated final returns
+  sharpe_distribution   — {p5, p25, p50, p75, p95} of simulated Sharpe ratios
+  fan_chart             — {dates, p5, p25, p50, p75, p95} sampled equity bands
+
+When the ML course is done
+--------------------------
+Nothing in this module needs to change.  Run it on ML strategy backtests
+exactly as you do for rule-based ones — the percentile rank tells you
+whether the ML results are statistically meaningful or just overfit noise.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+
+def run_simulation(
+    port_hist: list[dict],
+    initial_capital: float,
+    actual_sharpe: float,
+    n_simulations: int = 1000,
+) -> dict:
+    """
+    Bootstrap resample the daily return sequence n_simulations times.
+
+    Parameters
+    ----------
+    port_hist       : list of {date, value} dicts from the backtest
+    initial_capital : starting cash used in the backtest
+    actual_sharpe   : Sharpe ratio the strategy actually achieved
+    n_simulations   : number of random paths (default 1000)
+
+    Returns an 'enabled: False' dict if there are fewer than 5 data points.
+    """
+    if len(port_hist) < 5:
+        return {'enabled': False}
+
+    values = np.array([p['value'] for p in port_hist], dtype=float)
+    dates  = [p['date'] for p in port_hist]
+
+    # Daily returns (one fewer point than equity curve)
+    returns = np.diff(values) / values[:-1]
+    n       = len(returns)
+
+    actual_final  = float(values[-1])
+    actual_return = (actual_final / initial_capital - 1) * 100
+
+    # ── Bootstrap ─────────────────────────────────────────────────────────────
+    # No fixed seed — slight variation across runs is expected and correct.
+    # Each run gives slightly different percentile estimates, which demonstrates
+    # that the conclusion is stable, not an artifact of a particular sample.
+    sim_returns = np.random.choice(returns, size=(n_simulations, n), replace=True)
+
+    # Equity curves: shape (n_simulations, n)
+    # Each row is one simulated path starting from initial_capital
+    equity_matrix = initial_capital * np.cumprod(1 + sim_returns, axis=1)
+    final_values  = equity_matrix[:, -1]
+    final_returns = (final_values / initial_capital - 1) * 100
+
+    # ── Simulated Sharpe ratios ────────────────────────────────────────────────
+    stds        = sim_returns.std(axis=1)
+    means       = sim_returns.mean(axis=1)
+    rf_daily    = 0.04 / 252
+    sim_sharpes = np.where(stds > 0, (means - rf_daily) / stds * np.sqrt(252), 0.0)
+
+    # ── Percentile ranks of the actual results ─────────────────────────────────
+    actual_pct = float(np.mean(final_values <= actual_final) * 100)
+    sharpe_pct = float(np.mean(sim_sharpes <= actual_sharpe) * 100)
+
+    # ── Fan chart bands ────────────────────────────────────────────────────────
+    # Sample ~60 time points to keep the JSON payload small
+    step      = max(1, n // 60)
+    idx       = list(range(0, n, step))
+    if idx[-1] != n - 1:
+        idx.append(n - 1)
+
+    sampled   = equity_matrix[:, idx]
+    fan_dates = [dates[i] for i in idx]
+
+    def _band(pct):
+        return [round(float(v), 2) for v in np.percentile(sampled, pct, axis=0)]
+
+    return {
+        'enabled':             True,
+        'n_simulations':       n_simulations,
+        'actual_return_pct':   round(actual_return, 2),
+        'actual_percentile':   round(actual_pct,    1),
+        'sharpe_percentile':   round(sharpe_pct,    1),
+        'return_distribution': {
+            'p5':  round(float(np.percentile(final_returns,  5)), 2),
+            'p25': round(float(np.percentile(final_returns, 25)), 2),
+            'p50': round(float(np.percentile(final_returns, 50)), 2),
+            'p75': round(float(np.percentile(final_returns, 75)), 2),
+            'p95': round(float(np.percentile(final_returns, 95)), 2),
+        },
+        'sharpe_distribution': {
+            'p5':  round(float(np.percentile(sim_sharpes,  5)), 2),
+            'p25': round(float(np.percentile(sim_sharpes, 25)), 2),
+            'p50': round(float(np.percentile(sim_sharpes, 50)), 2),
+            'p75': round(float(np.percentile(sim_sharpes, 75)), 2),
+            'p95': round(float(np.percentile(sim_sharpes, 95)), 2),
+        },
+        'fan_chart': {
+            'dates': fan_dates,
+            'p5':    _band(5),
+            'p25':   _band(25),
+            'p50':   _band(50),
+            'p75':   _band(75),
+            'p95':   _band(95),
+        },
+    }

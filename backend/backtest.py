@@ -1,15 +1,26 @@
 """
-Backtesting engine with regime-aware metrics.
+Backtesting engine.
 
-For each trade it records which market regime was active at that point in
-time.  The results include a regime_breakdown section showing performance
-statistics (win rate, P&L, trade count) broken down by regime.
+Three production features layered on top of the core simulation:
 
-In adaptive mode the strategy is selected per-date from the regime, exactly
-mirroring what the live bot does.
+Transaction cost modelling
+    Every buy and sell deducts a configurable commission + slippage cost.
+    Results report gross return (pre-cost) alongside net return (post-cost).
+    Default: 0.10% commission + 0.05% slippage per trade side.
 
-Walk-forward mode splits the date range 70/30 so trades are only recorded
-in the out-of-sample 30%.
+Rolling Kelly Criterion sizing
+    Position size for each buy is determined by the Kelly fraction computed
+    from all closed trades PRIOR to that date (no look-ahead).
+    Falls back to the profile's fixed max_position_pct until 10 trades exist.
+
+Monte Carlo validation
+    After the simulation, the daily return sequence is resampled 1,000 times
+    to build a distribution of random paths.  The actual result's percentile
+    rank tells you whether performance is statistically meaningful.
+
+Regime-aware metrics
+    Every trade is tagged with the market regime at execution time.
+    Results include a performance breakdown by regime.
 """
 
 from __future__ import annotations
@@ -21,16 +32,31 @@ import numpy as np
 import pandas as pd
 
 import features as feat
+import monte_carlo as mc
 import regime as reg
 import risk
 
 logger = logging.getLogger(__name__)
 
 
+# ── Kelly helper (rolling, no look-ahead) ─────────────────────────────────────
+
+def _kelly(wins: list, losses: list, half: bool = True) -> float | None:
+    """
+    Kelly fraction from running trade history.
+    Returns None when fewer than 10 completed trades are available.
+    """
+    if len(wins) + len(losses) < 10 or not wins or not losses:
+        return None
+    p = len(wins) / (len(wins) + len(losses))
+    b = (sum(wins) / len(wins)) / (sum(losses) / len(losses))
+    f = max(0.0, (b * p - (1 - p)) / b)
+    return f * 0.5 if half else f
+
+
 # ── Signal generation ──────────────────────────────────────────────────────────
 
 def _add_signals(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
-    """Compute features and append +1 / -1 / 0 signal column."""
     df = feat.compute_features(df)
     df.dropna(inplace=True)
 
@@ -50,7 +76,7 @@ def _add_signals(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
             (df['macd_line'].shift(1) >= df['macd_signal'].shift(1)) &
             (df['macd_line'] < df['macd_signal'])
         )
-    elif strategy == 'ml':
+    elif strategy in ('ml', 'hold'):
         buy  = pd.Series(False, index=df.index)
         sell = pd.Series(False, index=df.index)
     else:
@@ -63,15 +89,9 @@ def _add_signals(df: pd.DataFrame, strategy: str) -> pd.DataFrame:
     return df
 
 
-# ── Regime breakdown helper ────────────────────────────────────────────────────
+# ── Regime breakdown ───────────────────────────────────────────────────────────
 
 def _regime_breakdown(sell_trades: list[dict]) -> dict:
-    """
-    Aggregate performance statistics per regime.
-
-    Returns a dict keyed by regime name, each containing:
-      trade_count, win_rate, total_pnl, avg_pnl, best_trade, worst_trade
-    """
     from collections import defaultdict
     buckets: dict[str, list] = defaultdict(list)
     for t in sell_trades:
@@ -79,11 +99,11 @@ def _regime_breakdown(sell_trades: list[dict]) -> dict:
         if t['pnl'] is not None:
             buckets[r].append(t['pnl'])
 
-    breakdown = {}
-    for regime_name, pnls in buckets.items():
+    out = {}
+    for rname, pnls in buckets.items():
         wins = [p for p in pnls if p > 0]
-        breakdown[regime_name] = {
-            'label':       reg.REGIME_LABELS.get(regime_name, regime_name),
+        out[rname] = {
+            'label':       reg.REGIME_LABELS.get(rname, rname),
             'trade_count': len(pnls),
             'win_rate':    round(len(wins) / len(pnls) * 100, 1) if pnls else 0,
             'total_pnl':   round(sum(pnls), 2),
@@ -91,24 +111,31 @@ def _regime_breakdown(sell_trades: list[dict]) -> dict:
             'best_trade':  round(max(pnls), 2) if pnls else 0,
             'worst_trade': round(min(pnls), 2) if pnls else 0,
         }
-    return breakdown
+    return out
 
 
 # ── Main engine ────────────────────────────────────────────────────────────────
 
-def run_backtest(strategy: str, tickers: list[str],
-                 start_date: str, end_date: str,
-                 initial_capital: float = 100_000.0,
-                 walk_forward: bool = False,
-                 risk_tolerance: str = 'moderate') -> dict:
+def run_backtest(
+    strategy:         str,
+    tickers:          list[str],
+    start_date:       str,
+    end_date:         str,
+    initial_capital:  float = 100_000.0,
+    walk_forward:     bool  = False,
+    risk_tolerance:   str   = 'moderate',
+    commission_pct:   float = 0.001,   # 0.10% per trade side
+    slippage_pct:     float = 0.0005,  # 0.05% half-spread per side
+) -> dict:
     """
-    Run a daily-bar backtest.
+    Run a full backtest with transaction costs, rolling Kelly sizing,
+    regime-aware metrics, and Monte Carlo validation.
 
-    strategy       : 'adaptive' selects strategy per-date from regime detection.
-    walk_forward   : only record trades in the final 30% of the date range.
-    risk_tolerance : 'conservative' | 'moderate' | 'aggressive'
+    commission_pct  : fraction of trade value paid as commission each side
+    slippage_pct    : fraction lost to bid-ask spread each side
     """
-    profile = risk.get_risk_profile(risk_tolerance)
+    profile    = risk.get_risk_profile(risk_tolerance)
+    cost_pct   = commission_pct + slippage_pct   # total cost per trade side
 
     # ── Walk-forward split ─────────────────────────────────────────────────
     split_date = None
@@ -117,8 +144,7 @@ def run_backtest(strategy: str, tickers: list[str],
         e = datetime.strptime(end_date,   '%Y-%m-%d')
         split_date = (s + timedelta(days=int((e - s).days * 0.70))).strftime('%Y-%m-%d')
 
-    # ── Pre-compute regime series from SPY (market proxy) ─────────────────
-    # spy_raw is reused below for the benchmark — download once only.
+    # ── SPY: regime series + benchmark (single download) ──────────────────
     regime_series: pd.Series | None = None
     spy_raw = feat.fetch_ohlcv('SPY', start=start_date, end=end_date)
     if spy_raw is not None and len(spy_raw) >= 30:
@@ -127,31 +153,26 @@ def run_backtest(strategy: str, tickers: list[str],
         except Exception as exc:
             logger.warning('Could not compute regime series: %s', exc)
 
-    def _regime_for_date(date) -> str:
+    def _regime_for(date) -> str:
         if regime_series is None:
             return 'RANGING'
-        date_str = date.strftime('%Y-%m-%d')
         if date in regime_series.index:
             return str(regime_series.loc[date])
-        # Nearest available
         past = regime_series[regime_series.index <= date]
         return str(past.iloc[-1]) if not past.empty else 'RANGING'
 
-    # ── Download and signal-label data ─────────────────────────────────────
-    # For adaptive strategy: pre-label each ticker with all three strategies
+    # ── Data download + signal labelling ──────────────────────────────────
     is_adaptive = (strategy == 'adaptive')
-
     data: dict[str, pd.DataFrame] = {}
+
     for ticker in tickers:
         raw = feat.fetch_ohlcv(ticker, start=start_date, end=end_date)
         if raw is None or len(raw) < 30:
             logger.warning('Skipping %s — insufficient data', ticker)
             continue
         if is_adaptive:
-            # Pre-compute signals for all three strategy variants
             tagged = feat.compute_features(raw.copy())
             tagged.dropna(inplace=True)
-            # Add signal columns for each strategy
             for strat in ('ma_crossover', 'rsi', 'macd'):
                 sf = _add_signals(raw.copy(), strat)
                 tagged[f'signal_{strat}'] = sf['signal'].reindex(tagged.index).fillna(0)
@@ -164,34 +185,35 @@ def run_backtest(strategy: str, tickers: list[str],
 
     all_dates = sorted(set().union(*[set(df.index) for df in data.values()]))
 
-    # ── Simulation loop ────────────────────────────────────────────────────
-    cash      = float(initial_capital)
-    positions: dict[str, dict] = {}
-    trades:    list[dict]      = []
-    port_hist: list[dict]      = []
+    # ── Simulation ─────────────────────────────────────────────────────────
+    cash           = float(initial_capital)
+    positions:     dict[str, dict] = {}
+    trades:        list[dict]      = []
+    port_hist:     list[dict]      = []
+    total_costs    = 0.0
+
+    # Rolling Kelly state (updated after every closed trade)
+    kelly_wins:   list[float] = []
+    kelly_losses: list[float] = []
 
     for date in all_dates:
         recording = (split_date is None) or (date.strftime('%Y-%m-%d') >= split_date)
 
-        # Determine active strategy for this date
+        # Strategy and regime for today
         if is_adaptive:
-            day_regime   = _regime_for_date(date)
+            day_regime   = _regime_for(date)
             day_strategy = reg.get_regime_strategy(day_regime, risk_tolerance)
             signal_col   = f'signal_{day_strategy}' if day_strategy != 'hold' else None
-
-            # Conservative profile: skip HIGH_VOLATILITY entirely
             if day_regime == 'HIGH_VOLATILITY' and not profile['trade_high_vol']:
                 signal_col = None
-
-            size_mult = (profile['vol_size_mult']
-                         if day_regime == 'HIGH_VOLATILITY' else 1.0)
+            size_mult = profile['vol_size_mult'] if day_regime == 'HIGH_VOLATILITY' else 1.0
         else:
-            day_regime   = _regime_for_date(date)
+            day_regime   = _regime_for(date)
             day_strategy = strategy
             signal_col   = 'signal'
-            size_mult    = (profile['vol_size_mult']
-                            if day_regime == 'HIGH_VOLATILITY' else 1.0)
+            size_mult    = profile['vol_size_mult'] if day_regime == 'HIGH_VOLATILITY' else 1.0
 
+        # Portfolio value for this day
         port_val = cash
         for tkr, pos in positions.items():
             if tkr in data and date in data[tkr].index:
@@ -207,7 +229,7 @@ def run_backtest(strategy: str, tickers: list[str],
             row   = df.loc[date]
             price = float(row['Close'])
 
-            # Resolve signal for this date
+            # Resolve signal
             if signal_col and signal_col in df.columns:
                 signal = int(row.get(signal_col, 0))
             elif not is_adaptive and 'signal' in df.columns:
@@ -220,6 +242,7 @@ def run_backtest(strategy: str, tickers: list[str],
                 pos    = positions[ticker]
                 entry  = pos['entry']
                 reason = None
+
                 if price <= entry * (1 - profile['stop_loss_pct']):
                     reason = 'stop_loss'
                 elif price >= entry * (1 + profile['take_profit_pct']):
@@ -228,51 +251,79 @@ def run_backtest(strategy: str, tickers: list[str],
                     reason = 'sell_signal'
 
                 if reason:
-                    shares  = pos['shares']
-                    pnl     = (price - entry) * shares
-                    pnl_pct = (price - entry) / entry * 100
-                    cash   += shares * price
+                    shares = pos['shares']
+
+                    # Transaction cost on sell side
+                    sell_cost  = price * shares * cost_pct
+                    proceeds   = price * shares - sell_cost
+                    cash      += proceeds
+                    total_costs += sell_cost
+
+                    pnl     = proceeds - pos['cost_basis']
+                    pnl_pct = pnl / pos['cost_basis'] * 100 if pos['cost_basis'] else 0
+
+                    # Update rolling Kelly state
+                    if pnl > 0:
+                        kelly_wins.append(pnl)
+                    else:
+                        kelly_losses.append(abs(pnl))
+
                     if recording:
                         trades.append({
-                            'date':    date.strftime('%Y-%m-%d'),
-                            'ticker':  ticker,
-                            'action':  'SELL',
-                            'price':   round(price,   2),
-                            'shares':  shares,
-                            'pnl':     round(pnl,     2),
-                            'pnl_pct': round(pnl_pct, 2),
-                            'reason':  reason,
-                            'regime':  day_regime,
+                            'date':     date.strftime('%Y-%m-%d'),
+                            'ticker':   ticker,
+                            'action':   'SELL',
+                            'price':    round(price,   2),
+                            'shares':   shares,
+                            'pnl':      round(pnl,     2),
+                            'pnl_pct':  round(pnl_pct, 2),
+                            'reason':   reason,
+                            'regime':   day_regime,
                             'strategy': day_strategy,
+                            'cost':     round(sell_cost, 2),
                         })
                     del positions[ticker]
 
             # ── Buy signal ─────────────────────────────────────────────────
             elif signal == 1 and price > 0 and recording and signal_col is not None:
-                max_spend   = port_val * profile['max_position_pct']
-                usable_cash = cash - port_val * profile['min_cash_reserve']
-                if usable_cash > price:
-                    spend  = min(max_spend * size_mult, usable_cash)
-                    shares = int(spend / price)
-                    if shares > 0:
-                        cash -= shares * price
-                        positions[ticker] = {'shares': shares, 'entry': price}
+                # Rolling Kelly sizing
+                kelly_f    = _kelly(kelly_wins, kelly_losses)
+                base_shares = risk.calculate_position_size_kelly(
+                    port_val, price, cash, kelly_f, profile)
+                shares = max(int(base_shares * size_mult), 0)
+
+                if shares > 0:
+                    buy_cost    = price * shares * cost_pct
+                    total_spend = price * shares + buy_cost
+                    usable_cash = cash - port_val * profile['min_cash_reserve']
+
+                    if usable_cash >= total_spend:
+                        cash        -= total_spend
+                        total_costs += buy_cost
+
+                        positions[ticker] = {
+                            'shares':     shares,
+                            'entry':      price,
+                            'cost_basis': total_spend,  # used for net P&L
+                        }
                         trades.append({
-                            'date':    date.strftime('%Y-%m-%d'),
-                            'ticker':  ticker,
-                            'action':  'BUY',
-                            'price':   round(price, 2),
-                            'shares':  shares,
-                            'pnl':     None,
-                            'pnl_pct': None,
-                            'reason':  'buy_signal',
-                            'regime':  day_regime,
+                            'date':     date.strftime('%Y-%m-%d'),
+                            'ticker':   ticker,
+                            'action':   'BUY',
+                            'price':    round(price, 2),
+                            'shares':   shares,
+                            'pnl':      None,
+                            'pnl_pct':  None,
+                            'reason':   'buy_signal',
+                            'regime':   day_regime,
                             'strategy': day_strategy,
+                            'cost':     round(buy_cost, 2),
                         })
 
     # ── Performance metrics ────────────────────────────────────────────────
-    final_value  = port_hist[-1]['value'] if port_hist else initial_capital
-    total_return = (final_value - initial_capital) / initial_capital * 100
+    final_value   = port_hist[-1]['value'] if port_hist else initial_capital
+    net_return    = (final_value - initial_capital) / initial_capital * 100
+    gross_return  = net_return + (total_costs / initial_capital * 100)
 
     sell_trades = [t for t in trades if t['action'] == 'SELL']
     wins        = [t for t in sell_trades if t['pnl'] and t['pnl'] > 0]
@@ -303,7 +354,12 @@ def run_backtest(strategy: str, tickers: list[str],
         ann_r  = (final_value / initial_capital) ** (1 / years) - 1
         calmar = round(ann_r / (max_dd / 100), 2)
 
-    # SPY buy-and-hold benchmark — reuse the already-downloaded spy_raw
+    # Kelly fraction from full backtest results (reported as a metric)
+    backtest_kelly = None
+    if kelly_wins and kelly_losses:
+        backtest_kelly = _kelly(kelly_wins, kelly_losses)
+
+    # SPY benchmark (reuse already-downloaded spy_raw)
     spy_df           = spy_raw
     benchmark_return = 0.0
     spy_curve        = []
@@ -320,13 +376,19 @@ def run_backtest(strategy: str, tickers: list[str],
                 for d, v in spy_df['Close'].items()
             ]
 
+    # ── Monte Carlo validation ─────────────────────────────────────────────
+    mc_result = mc.run_simulation(port_hist, initial_capital, sharpe)
+
     return {
         'metrics': {
-            'total_return':     round(total_return, 2),
+            'total_return':     round(net_return,    2),
+            'gross_return':     round(gross_return,  2),
+            'total_costs':      round(total_costs,   2),
             'win_rate':         round(len(wins) / len(sell_trades) * 100, 1) if sell_trades else 0,
             'max_drawdown':     round(max_dd, 2),
             'sharpe_ratio':     sharpe,
             'calmar_ratio':     calmar,
+            'kelly_fraction':   round(backtest_kelly * 100, 2) if backtest_kelly else None,
             'total_trades':     len(sell_trades),
             'winning_trades':   len(wins),
             'losing_trades':    len(losses),
@@ -338,9 +400,10 @@ def run_backtest(strategy: str, tickers: list[str],
             'initial_capital':  initial_capital,
             'benchmark_return': round(benchmark_return, 2),
         },
+        'monte_carlo':      mc_result,
         'regime_breakdown': _regime_breakdown(sell_trades),
-        'equity_curve': port_hist,
-        'spy_curve':    spy_curve,
-        'trades':       trades[-200:],
-        'walk_forward': {'enabled': walk_forward, 'split_date': split_date},
+        'equity_curve':     port_hist,
+        'spy_curve':        spy_curve,
+        'trades':           trades[-200:],
+        'walk_forward':     {'enabled': walk_forward, 'split_date': split_date},
     }

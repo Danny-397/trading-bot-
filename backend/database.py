@@ -195,6 +195,55 @@ def get_performance_metrics(strategy=None):
     }
 
 
+def compute_kelly_fraction(strategy: str = None, min_trades: int = 10,
+                           half_kelly: bool = True) -> float | None:
+    """
+    Compute the Kelly Criterion position-sizing fraction from closed trade history.
+
+    Kelly formula:  f* = (b·p − q) / b
+      b = average win / average |loss|   (odds ratio)
+      p = win rate,  q = 1 − p
+
+    Half-Kelly (default) scales by 0.5 to reduce variance in practice.
+
+    Returns None when fewer than min_trades closed trades are available —
+    the caller should fall back to the profile's fixed max_position_pct.
+    """
+    conn = get_connection()
+    if strategy and strategy not in ('adaptive', 'ml'):
+        rows = conn.execute(
+            "SELECT pnl FROM trades WHERE action='SELL' AND strategy=? AND pnl IS NOT NULL",
+            (strategy,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT pnl FROM trades WHERE action='SELL' AND pnl IS NOT NULL"
+        ).fetchall()
+    conn.close()
+
+    if len(rows) < min_trades:
+        return None
+
+    pnls   = [r['pnl'] for r in rows]
+    wins   = [p for p in pnls if p > 0]
+    losses = [abs(p) for p in pnls if p < 0]
+
+    if not wins or not losses:
+        return None
+
+    p = len(wins) / len(pnls)
+    q = 1.0 - p
+    b = (sum(wins) / len(wins)) / (sum(losses) / len(losses))  # odds ratio
+
+    kelly = (b * p - q) / b
+    kelly = max(0.0, kelly)
+
+    if half_kelly:
+        kelly *= 0.5
+
+    return round(kelly, 4)
+
+
 def get_live_metrics():
     """Computes Sharpe ratio and max drawdown from live portfolio snapshot history."""
     conn = get_connection()

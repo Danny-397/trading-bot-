@@ -256,7 +256,11 @@ def _trading_cycle(configured_strategy: str):
                 continue
 
             if signal == 'BUY' and ticker not in positions:
-                base_shares = risk.calculate_position_size(port_val, price, cash, profile)
+                # Kelly Criterion sizing — falls back to fixed sizing if
+                # fewer than 10 closed trades exist in the database
+                kelly = database.compute_kelly_fraction(active_strategy)
+                base_shares = risk.calculate_position_size_kelly(
+                    port_val, price, cash, kelly, profile)
                 shares = max(int(base_shares * size_mult), 0)
                 if shares > 0:
                     ok, _ = risk.can_trade(port_val, cash, profile)
