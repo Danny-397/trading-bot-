@@ -4,10 +4,17 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 // ── Config ─────────────────────────────────────────────────────────────────
-const API_BASE =
-  (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-    ? 'http://localhost:5000'
-    : ''   // same-origin in production (Render serves frontend + backend together)
+// RENDER_URL is set in config.js (edit that file before deploying to Vercel).
+const _isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+const API_BASE = window.RENDER_URL || (_isLocal ? 'http://localhost:5000' : '')
+
+if (!_isLocal && !window.RENDER_URL) {
+  console.error(
+    '%c⚠ TradeBot: RENDER_URL is not set in config.js.\n' +
+    'All API calls will fail. Edit frontend/config.js and set your Render backend URL.',
+    'color:#f85149;font-size:14px;font-weight:bold'
+  )
+}
 
 const STRATEGY_LABELS = {
   adaptive:     'Adaptive (Regime-Based)',

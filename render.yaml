@@ -1,0 +1,38 @@
+# Render deployment configuration
+# Docs: https://render.com/docs/render-yaml-spec
+#
+# Deploy with one click: https://render.com/deploy
+# Or push this file to GitHub and Render will detect it automatically.
+
+services:
+  - type: web
+    name: tradebot-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    # gunicorn.conf.py is auto-discovered — sets workers=1, timeout=120,
+    # threads=4, and binds to $PORT.
+
+    envVars:
+      - key: ALPACA_API_KEY
+        sync: false          # set manually in Render dashboard
+
+      - key: ALPACA_SECRET_KEY
+        sync: false          # set manually in Render dashboard
+
+      - key: DATABASE_PATH
+        value: /data/tradebot.db   # persistent disk path
+
+      - key: CORS_ORIGINS
+        sync: false          # set to your Vercel URL after frontend deploy
+                             # e.g. https://your-project.vercel.app
+
+    disk:
+      name: tradebot-db
+      mountPath: /data
+      sizeGB: 1
+      # Without this disk, SQLite is wiped on every deploy.
+      # $0.25/GB/month — prevents losing all trade history on redeploy.
+
+    healthCheckPath: /health
