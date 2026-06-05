@@ -1,127 +1,225 @@
-# ◈ TradeBot
+# ◈ TradeBot — Quantitative Research Platform
 
-**Autonomous algorithmic trading system with three quantitative strategies, a backtesting engine with Sharpe ratio and max drawdown analysis, automated risk management, and real-time dashboard — paper trading only via Alpaca API.**
+**A paper-trading algorithmic system that not only executes quantitative strategies, but rigorously validates whether its own performance is statistically real — using the same mathematical tools employed by institutional quant funds.**
 
 [![CI](https://github.com/Danny-397/trading-bot-/actions/workflows/ci.yml/badge.svg)](https://github.com/Danny-397/trading-bot-/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=flat&logo=flask)](https://flask.palletsprojects.com)
 [![Alpaca](https://img.shields.io/badge/Alpaca-Paper_Trading_Only-FFCD00?style=flat)](https://alpaca.markets)
-[![Chart.js](https://img.shields.io/badge/Chart.js-4.4-FF6384?style=flat)](https://chartjs.org)
-[![SQLite](https://img.shields.io/badge/SQLite-3-003B57?style=flat&logo=sqlite)](https://sqlite.org)
+[![SciPy](https://img.shields.io/badge/SciPy-1.13-8CAAE6?style=flat&logo=scipy)](https://scipy.org)
 
-> **Live demo:** `[Add Render/Vercel URL after deployment]`
+> **Live demo:** `[Add Render URL after deployment]`
 
 ---
 
 ## ⚠️ Disclaimer — Paper Trading Only
 
-> **This project is for educational purposes only.**
-> TradeBot connects exclusively to Alpaca's **paper-trading sandbox** environment.
+> This project is for **educational purposes only.**
+> TradeBot connects exclusively to Alpaca's **paper-trading sandbox** (simulated market, fake money, zero financial risk).
 > **No real money is ever placed at risk. This bot never trades real money.**
-> Nothing in this project constitutes financial advice.
-> Past backtesting performance does not guarantee future real-world results.
+> Nothing here constitutes financial advice. Past backtesting performance does not guarantee future results.
 
 ---
 
 ## What is this?
 
-TradeBot is a fully autonomous algorithmic trading system that connects to Alpaca's paper trading environment (simulated market, fake money, zero financial risk). It executes trades based on three quantitative technical analysis strategies, enforces multi-layered automated risk management on every order, and includes a backtesting engine that simulates strategies against historical OHLCV data with full performance metrics including Sharpe ratio and max drawdown.
+TradeBot is a full-stack quantitative research platform that does something most student trading projects don't: **it asks whether its own results are real.**
 
-Built as an independent CS project demonstrating end-to-end software engineering: quantitative signal generation, REST API design, real-time data visualization, SQLite persistence, and cloud deployment.
+Most backtesting tools show you a Sharpe ratio and stop there. This system goes further — after every simulation it applies three independent statistical tests borrowed from professional quant finance:
+
+1. **Monte Carlo Resampling** (1,000 bootstrap paths) — does this strategy actually beat random?
+2. **Deflated Sharpe Ratio** (Lopez de Prado, 2014) — is the Sharpe genuine after correcting for multiple-testing bias and non-normal returns?
+3. **Fama-French 3-Factor Decomposition** — is the return actually alpha, or is it just passive exposure to known market risk premia that a factor ETF would replicate for free?
+
+The system synthesizes all three into a verdict card: **STATISTICALLY SIGNIFICANT**, **PROMISING — NEEDS MORE DATA**, or **INCONCLUSIVE — MAY BE NOISE**.
+
+Beyond validation, the platform includes a live trading bot, a backtesting engine with walk-forward cross-validation and transaction cost modeling, and a Markowitz portfolio optimizer that computes the efficient frontier via quadratic programming.
 
 ---
 
-## Features
+## What Makes This Different
 
-| Feature | Description |
+| Typical student trading bot | This project |
 |---|---|
-| **3 Quantitative Strategies** | Moving Average Crossover, RSI Mean Reversion, MACD Momentum — each selectable from the live dashboard |
-| **Backtesting Engine** | Simulates any strategy against 1+ years of historical data; outputs Sharpe ratio, max drawdown, win rate, and full P&L log |
-| **Automated Risk Management** | Stop-loss, take-profit, position sizing, cash reserve, daily trade cap — enforced automatically on every single order |
-| **Live Dashboard** | Real-time portfolio stats, open positions table, trade feed, equity curve — auto-refreshes every 10 seconds |
-| **Performance Metrics** | Win rate, Sharpe ratio, max drawdown, avg win/loss, comparison against SPY buy-and-hold benchmark |
-| **SQLite Persistence** | Every trade and portfolio snapshot stored locally — metrics survive server restarts |
-| **Paper Trading Only** | Hard-coded `paper=True` flag in Alpaca client — no path to live trading exists |
+| Fixed stop-loss from entry | Trailing stop — floor rises as price climbs, locking in gains |
+| Fixed position sizing | Kelly Criterion sizing — fraction derived from historical win rate and odds ratio |
+| Single strategy, single backtest | 4 strategies + adaptive mode; walk-forward out-of-sample testing |
+| "My Sharpe is 1.4" | "My Sharpe is 1.4 and the Deflated Sharpe gives 91% probability it's real after testing 5 strategies" |
+| Backtest return metric | Fama-French alpha decomposition — separates skill from passive factor exposure |
+| No portfolio theory | Markowitz efficient frontier via quadratic programming; max-Sharpe and min-variance portfolios |
+| No statistical context | Monte Carlo fan chart + Sharpe percentile rank vs 1,000 resampled paths |
+| No market context | ADX + Bollinger Band Width + realized volatility regime detection; adaptive strategy selection |
+
+---
+
+## Feature Overview
+
+### Trading Engine
+- **4 Quantitative Strategies**: MA Crossover, RSI Mean Reversion, MACD Momentum, ML stub (ready for a trained model)
+- **Adaptive Mode**: Detects the current market regime from SPY data and selects the optimal strategy automatically
+- **Trailing Stop-Loss**: Exit floor rises with price — a position that runs up 12% can't turn into a loss
+- **Kelly Criterion Sizing**: Position size is computed from the Kelly formula using live win rate and avg win/loss; falls back to fixed sizing when fewer than 10 closed trades exist
+- **Risk Profiles**: Conservative / Moderate / Aggressive — each controls stop distance, take-profit target, position cap, cash reserve, and high-volatility behaviour
+- **5-Minute Cycle**: Every five minutes during market hours the bot detects the regime, checks risk gates, sweeps stops, generates signals, and executes BUY/SELL orders
+
+### Market Regime Detection
+Classifies the market into four states using three independent indicators computed from SPY:
+
+| Regime | Trigger | Default Strategy |
+|---|---|---|
+| TRENDING UP | ADX ≥ 25, +DI > −DI | MA Crossover |
+| TRENDING DOWN | ADX ≥ 25, −DI > +DI | MA Crossover |
+| RANGING | ADX < 20 | RSI Mean Reversion |
+| HIGH VOLATILITY | 30-day realized vol > 25% | RSI (reduced size) |
+
+Indicators: **ADX** (Wilder's smoothing), **Bollinger Band Width** (consolidation proxy), **30-day Annualised Realised Volatility**.
+
+### Backtesting Engine
+- **Day-by-day simulation** over any date range with any set of tickers
+- **Walk-forward cross-validation**: train on first 70%, evaluate on final 30% only — prevents in-sample bias
+- **Transaction costs**: configurable commission + slippage applied to every buy and sell
+- **Rolling Kelly sizing**: position size updates after each closed trade using only trades *before* that date (no look-ahead)
+- **Regime tagging**: every trade labelled with the market regime at execution time
+- **SPY benchmark**: parallel simulation of buy-and-hold for alpha comparison
+- **Calmar ratio**: annualised return / max drawdown — risk-adjusted metric used by hedge funds
+
+### Statistical Validation
+- **Monte Carlo (1,000 paths)**: resamples the daily return sequence with replacement; computes where the actual result ranks in the distribution of random paths. Fan chart shows P5/P25/P50/P75/P95 equity bands.
+- **Probabilistic Sharpe Ratio (PSR)**: P(SR\_true > SR*) corrected for non-normality using skewness and excess kurtosis (Lopez de Prado, 2014, eq. 1)
+- **Deflated Sharpe Ratio (DSR)**: PSR where the benchmark is the *expected maximum Sharpe from N independent random strategies*, scaling correctly with sample size via √(252/T). Tells you whether the best result from a search over strategies is real or just the luckiest of N.
+- **Fama-French 3-Factor Decomposition**: OLS regression of portfolio excess returns against Mkt-RF, SMB (size), and HML (value) factors from Ken French's data library. Reports Jensen's alpha (annualised), factor betas, R², and per-coefficient t-statistics.
+
+### Portfolio Optimizer
+- **Markowitz Mean-Variance Optimization** via `scipy.optimize.minimize` (SLSQP)
+- Computes the **efficient frontier** (60 portfolios from min-variance to max return)
+- Returns the **max-Sharpe (tangency) portfolio** and **global minimum-variance portfolio**
+- Visualises individual asset risk/return scatter, optimal portfolio positions, and a **Pearson correlation heatmap**
+- Optional integration with backtest: when `use_markowitz=true`, optimal weights replace the fixed `max_position_pct` in position sizing
+
+### Risk Management (all enforced on every order)
+
+| Rule | Conservative | Moderate | Aggressive |
+|---|---|---|---|
+| Trailing stop | 3% from peak | 5% from peak | 7% from peak |
+| Take-profit | 10% from entry | 15% from entry | 20% from entry |
+| Max position | 5% of portfolio | 10% of portfolio | 15% of portfolio |
+| Cash reserve | 30% minimum | 20% minimum | 10% minimum |
+| Daily trade cap | 6 | 10 | 15 |
+| High-vol behaviour | Sits out entirely | Half-size positions | Full size |
+
+### Dashboard & UI
+- **Live dashboard**: portfolio value, open positions, equity curve, regime card, recent trades — auto-refreshes every 10 seconds
+- **Backtest interface**: sticky sidebar form + 4-tab results (Performance / Monte Carlo / ⚗ Research / Trades)
+- **Portfolio optimizer**: efficient frontier chart, optimal weight bar displays, correlation matrix heatmap
+- **Strategy Validation Report**: synthesises Monte Carlo, DSR, and Fama-French into a single verdict with colour-coded confidence
+- Vanilla HTML/CSS/JS + Chart.js — zero frontend frameworks, zero build step
 
 ---
 
 ## Tech Stack
 
-**Backend**
-- Python 3.11 + Flask 3 (REST API)
-- alpaca-py (Alpaca Markets Paper Trading API)
-- yfinance (historical OHLCV data)
-- pandas + numpy (all indicator maths implemented from scratch — no black-box libraries)
-- SQLite (trade and performance persistence via database.py)
-- Python threading (non-blocking 5-minute bot loop)
-
-**Frontend**
-- Vanilla HTML / CSS / JavaScript (zero frameworks)
-- Chart.js 4 (equity curve + SPY benchmark visualization)
-- Dark monospace terminal aesthetic
-
-**Deployment**
-- Backend → Render (free tier, gunicorn)
-- Frontend → Vercel (free tier, static)
-
----
-
-## How the Strategies Work
-
-### Strategy 1 — Moving Average Crossover
-The most classical algorithmic trading strategy. Two Simple Moving Averages track trend direction.
-
-- **BUY** when the 20-day SMA crosses *above* the 50-day SMA ("golden cross") — short-term momentum is rising
-- **SELL** when the 20-day SMA crosses *below* the 50-day SMA ("death cross") — momentum is falling
-- Formula: `SMA(n) = sum of last n closing prices / n`
-- Works best in trending, directional markets
-
-### Strategy 2 — RSI Mean Reversion
-The Relative Strength Index (0–100) identifies when a stock is temporarily over- or under-valued.
-
-- **BUY** when RSI < 30 — stock is oversold, statistically likely to reverse upward
-- **SELL** when RSI > 70 — stock is overbought, statistically likely to pull back
-- Formula: `RSI = 100 - 100 / (1 + RS)` where `RS = avg gain / avg loss` over 14 periods
-- Works best in range-bound, oscillating markets
-
-### Strategy 3 — MACD Momentum
-Compares two exponential moving averages to detect momentum shifts, with volume confirmation to filter noise.
-
-- **BUY** when MACD line crosses above signal line *and* volume exceeds 20-day average
-- **SELL** when MACD line crosses below signal line
-- Formula: `MACD = EMA(12) - EMA(26)`, `Signal = EMA(9) of MACD`
-- Volume filter significantly reduces false signals on low-liquidity days
-
----
-
-## Risk Management Rules
-
-Every order must pass through a centralized gating system before execution. All rules run simultaneously and cannot be bypassed.
-
-| Rule | Parameter | Purpose |
+### Backend
+| Library | Version | Purpose |
 |---|---|---|
-| Stop-loss | −5% from entry | Hard exit to prevent runaway losses |
-| Take-profit | +15% from entry | Lock in gains before they evaporate |
-| Max position size | 10% of portfolio | Forced diversification across holdings |
-| Minimum cash reserve | 20% of portfolio | Always keep dry powder for new signals |
-| Daily trade cap | 10 orders/day | Prevent overtrading on noisy signals |
-| Market hours only | 9:30 AM–4:00 PM EST | Avoid illiquid pre/after-market conditions |
+| Python | 3.11+ | Runtime |
+| Flask | 3.0 | REST API |
+| alpaca-py | 0.26 | Alpaca Paper Trading orders |
+| yfinance | 0.2 | Historical OHLCV data |
+| pandas | 2.2 | Time-series data manipulation |
+| numpy | 1.26 | Indicator maths, matrix operations |
+| scipy | 1.13 | Quadratic programming (Markowitz SLSQP) |
+| python-dotenv | 1.0 | Environment variable loading |
+| gunicorn | 22 | Production WSGI server |
+| pytz | 2024 | Market hours timezone handling |
+
+All indicator maths (SMA, EMA, RSI, MACD, ADX, Bollinger Bands) are implemented from first principles — no TA-Lib or similar black-box dependency.
+
+### Frontend
+- Vanilla HTML5 / CSS3 / JavaScript (ES2022)
+- Chart.js 4.4 (line, scatter, horizontal bar charts)
+- Inter + JetBrains Mono (Google Fonts)
+- No React, no Vue, no Webpack — open `index.html` in any browser
+
+### CI/CD
+- GitHub Actions: syntax check (`py_compile`), flake8 lint, pytest (79 tests), DB smoke test with dummy keys
+- Security audit via pip-audit (non-blocking, runs as separate job)
 
 ---
 
-## Backtesting Results
+## Project Structure
 
-> *Run the backtester with your own date range and capital — results vary by period and strategy.*
+```
+trading-bot-/
+├── backend/
+│   ├── app.py           Flask REST API — all 13 endpoints
+│   ├── bot.py           Trading loop, Alpaca orders, trailing stop tracking
+│   ├── strategies.py    Signal generators (MA Crossover, RSI, MACD, ML stub)
+│   ├── backtest.py      Historical simulation — walk-forward, Kelly, costs, regime tagging
+│   ├── features.py      Centralised indicator engineering (SMA, RSI, MACD, ATR, returns)
+│   ├── regime.py        Market regime detection (ADX, BB Width, realised volatility)
+│   ├── risk.py          Risk gate: trailing stop, Kelly sizing, profiles, daily limits
+│   ├── portfolio.py     Markowitz efficient frontier via SciPy SLSQP
+│   ├── monte_carlo.py   Bootstrap resampling — 1,000 equity paths, fan chart bands
+│   ├── stats.py         PSR, Deflated Sharpe Ratio, Fama-French 3-factor OLS
+│   ├── database.py      SQLite persistence (WAL mode, Kelly computation, live metrics)
+│   ├── gunicorn.conf.py workers=1 (prevents duplicate Alpaca orders)
+│   ├── requirements.txt
+│   └── tests/
+│       ├── test_risk.py       44 tests — stop/take, trailing stop, sizing, Kelly, risk gates
+│       ├── test_features.py   13 tests — SMA, RSI, MACD correctness on synthetic data
+│       ├── test_portfolio.py  17 tests — Markowitz constraints, frontier math, data layer
+│       └── test_stats.py      23 tests — PSR/DSR math, FF3 CSV parsing, OLS regression
+├── frontend/
+│   ├── index.html       Live trading dashboard
+│   ├── backtest.html    Backtest interface with Research tab
+│   ├── portfolio.html   Markowitz portfolio optimizer
+│   ├── style.css        Design system (Inter + JetBrains Mono, dark theme)
+│   └── app.js           All client logic — dashboard, backtest, portfolio optimizer
+├── .github/
+│   └── workflows/ci.yml
+├── .flake8
+├── .env.example
+└── README.md
+```
 
-Example results (replace with real numbers after running):
+---
 
-| Strategy | Period | Return | Win Rate | Sharpe | Max Drawdown |
-|---|---|---|---|---|---|
-| MA Crossover | Jan–Dec 2024 | — | — | — | — |
-| RSI Mean Reversion | Jan–Dec 2024 | — | — | — | — |
-| MACD Momentum | Jan–Dec 2024 | — | — | — | — |
-| SPY Buy & Hold | Jan–Dec 2024 | — | — | — | — |
+## API Reference
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/status` | GET | Bot state, portfolio summary, regime, Kelly fraction, live Sharpe & drawdown |
+| `/api/start` | POST | Start the trading bot with a given strategy |
+| `/api/stop` | POST | Send stop signal to the bot loop |
+| `/api/strategy` | POST | Switch active strategy while running |
+| `/api/risk_tolerance` | POST | Switch risk profile (conservative / moderate / aggressive) |
+| `/api/regime` | GET | Detect current market regime from live SPY data |
+| `/api/trades` | GET | Trade history with limit and strategy filters |
+| `/api/portfolio/history` | GET | Portfolio value time-series snapshots |
+| `/api/portfolio/optimize` | POST | Run Markowitz efficient frontier optimization |
+| `/api/activity` | GET | Recent bot activity log |
+| `/api/indicators` | GET | Current indicator values for all watchlist tickers |
+| `/api/watchlist` | GET | Current watchlist tickers |
+| `/api/backtest` | POST | Full backtest with walk-forward, Kelly, Monte Carlo, DSR, Fama-French |
+| `/health` | GET | Health check (returns `{"status": "ok"}`) |
+
+### Backtest request body
+
+```json
+{
+  "strategy":        "adaptive",
+  "tickers":         ["AAPL", "MSFT", "NVDA", "GOOGL", "TSLA", "JPM", "SPY"],
+  "start_date":      "2023-01-01",
+  "end_date":        "2024-01-01",
+  "initial_capital": 100000,
+  "walk_forward":    false,
+  "risk_tolerance":  "moderate",
+  "commission_pct":  0.001,
+  "slippage_pct":    0.0005,
+  "use_markowitz":   false
+}
+```
 
 ---
 
@@ -134,15 +232,14 @@ cd trading-bot-
 ```
 
 ### 2. Get Alpaca paper trading API keys (free)
-1. Go to [alpaca.markets](https://alpaca.markets) and create an account
-2. Switch to **Paper Trading** in the top-right toggle
+1. Create an account at [alpaca.markets](https://alpaca.markets)
+2. Switch to **Paper Trading** (top-right toggle)
 3. Go to **Overview → API Keys → Generate New Key**
-4. Copy both the API key and secret key
 
 ### 3. Configure environment variables
 ```bash
 cp .env.example .env
-# Edit .env and fill in your ALPACA_API_KEY and ALPACA_SECRET_KEY
+# Fill in ALPACA_API_KEY and ALPACA_SECRET_KEY
 ```
 
 ### 4. Install dependencies
@@ -150,15 +247,28 @@ cp .env.example .env
 pip install -r backend/requirements.txt
 ```
 
-### 5. Start the backend
+### 5. Run the backend
 ```bash
 python backend/app.py
-# Server starts on http://localhost:5000
+# → http://localhost:5000
 ```
 
 ### 6. Open the frontend
-Open `frontend/index.html` in any browser.
-For a proper dev server: `npx serve frontend` or `python -m http.server 3000 -d frontend`
+```bash
+# Option A: open directly
+open frontend/index.html
+
+# Option B: local dev server (avoids CORS issues)
+python -m http.server 3000 -d frontend
+# → http://localhost:3000
+```
+
+### 7. Run the test suite
+```bash
+cd backend
+pytest tests/ -v
+# 79 tests, all should pass
+```
 
 ---
 
@@ -169,88 +279,84 @@ For a proper dev server: `npx serve frontend` or `python -m http.server 3000 -d 
 | `ALPACA_API_KEY` | Yes | Alpaca **paper trading** API key |
 | `ALPACA_SECRET_KEY` | Yes | Alpaca **paper trading** secret key |
 | `PORT` | No | Flask port (default: 5000) |
-
----
-
-## Project Structure
-
-```
-trading-bot-/
-├── backend/
-│   ├── app.py           Flask REST API — all endpoints
-│   ├── bot.py           Core trading loop + Alpaca order execution
-│   ├── strategies.py    Signal generation (MA Crossover, RSI, MACD)
-│   ├── backtest.py      Historical simulation engine
-│   ├── risk.py          Risk gate: stop-loss, sizing, daily limits
-│   ├── database.py      SQLite persistence layer
-│   └── requirements.txt
-├── frontend/
-│   ├── index.html       Live trading dashboard
-│   ├── backtest.html    Backtesting interface
-│   ├── about.html       Strategy & architecture explanation
-│   ├── style.css        Dark terminal theme
-│   └── app.js           API calls, charts, auto-refresh
-├── .env.example
-└── README.md
-```
-
----
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/status` | GET | Bot state, portfolio summary, live Sharpe & drawdown |
-| `/api/start` | POST | Start the trading bot |
-| `/api/stop` | POST | Stop the trading bot |
-| `/api/strategy` | POST | Switch active strategy |
-| `/api/trades` | GET | Trade history |
-| `/api/portfolio/history` | GET | Portfolio value over time |
-| `/api/activity` | GET | Recent bot activity log |
-| `/api/indicators` | GET | Current indicator values for watchlist |
-| `/api/backtest` | POST | Run a backtest simulation |
-| `/health` | GET | Health check |
+| `DATABASE_PATH` | No | SQLite path (default: `backend/tradebot.db`). Set to `/data/tradebot.db` on Render for persistence. |
+| `CORS_ORIGINS` | No | Allowed CORS origins (default: `*`). Set to your Vercel URL in production. |
 
 ---
 
 ## Deployment
 
-### Backend (Render)
+### Backend → Render
 
 1. Push to GitHub
-2. New Web Service → connect repo → set root directory to `backend/`
-3. Build command: `pip install -r requirements.txt`
-4. Start command: `gunicorn app:app` *(gunicorn.conf.py is auto-detected — sets workers=1, timeout=120)*
-5. Add environment variables:
+2. New Web Service → connect repo → root directory: `backend/`
+3. Build: `pip install -r requirements.txt`
+4. Start: `gunicorn app:app` (gunicorn.conf.py auto-discovered)
+5. Environment variables:
 
 | Variable | Value |
 |---|---|
-| `ALPACA_API_KEY` | Your paper trading API key |
-| `ALPACA_SECRET_KEY` | Your paper trading secret key |
-| `DATABASE_PATH` | `/data/tradebot.db` *(see persistent disk note below)* |
-| `CORS_ORIGINS` | `https://your-project.vercel.app` *(after Vercel deploy)* |
+| `ALPACA_API_KEY` | Your paper trading key |
+| `ALPACA_SECRET_KEY` | Your paper trading secret |
+| `DATABASE_PATH` | `/data/tradebot.db` |
+| `CORS_ORIGINS` | `https://your-project.vercel.app` |
 
-### Frontend (Vercel)
+**Persistent disk**: Add a Render disk mounted at `/data` — otherwise SQLite is wiped on every deploy.
 
-1. New Project → connect repo → set root directory to `frontend/`
-2. **Before deploying:** update `API_BASE` in [frontend/app.js](frontend/app.js) with your Render URL
+### Frontend → Vercel
+
+1. New Project → root directory: `frontend/`
+2. No build step needed (static files)
+3. Update `API_BASE` in `frontend/app.js` with your Render URL
+
+### Deployment notes
+
+- **`workers = 1` is mandatory.** `gunicorn.conf.py` enforces this. Multiple workers = multiple bot threads = duplicate Alpaca orders on the same account.
+- **Render free tier spins down** after 15 min of inactivity. Use UptimeRobot (free) to ping `/health` every 10 minutes. The bot loop must be restarted from the dashboard after a cold start.
+- **Backtest timeouts**: the Render default timeout is 30s; `gunicorn.conf.py` sets `timeout = 120` to accommodate long backtests with many tickers.
 
 ---
 
-### ⚠️ Deployment Gotchas
+## Mathematical Background
 
-**Persistent database (important)**
-Render's free tier has an ephemeral filesystem — without action, `tradebot.db` is wiped on every deploy and all trade history is lost.
+### Kelly Criterion
+`f* = (b·p − q) / b` where `b = avg_win / avg_loss`, `p = win_rate`, `q = 1 − p`.
+Half-Kelly (`f* × 0.5`) is used in practice to reduce variance without sacrificing much expected growth. Falls back to fixed sizing until 10 closed trades exist.
 
-Fix: In your Render service, go to **Disks → Add Disk**, mount it at `/data`, and set `DATABASE_PATH=/data/tradebot.db` as an environment variable. The $0.25/GB/month disk preserves your SQLite DB across deploys.
+### Probabilistic Sharpe Ratio (PSR)
+`PSR(SR*) = Φ[(SR_hat − SR*) √(T−1) / √(1 − γ₃·SR_hat + (γ₄−1)/4·SR_hat²)]`
+where γ₃ = skewness, γ₄ = raw kurtosis. Corrects the naive Sharpe comparison for fat tails and finite sample size.
+Source: *Lopez de Prado, M. (2014). "The Deflated Sharpe Ratio." Journal of Portfolio Management.*
 
-**Render free tier spins down**
-Free tier services stop after 15 minutes of inactivity. The trading bot loop dies when this happens. The service wakes up on the next HTTP request (cold start ~30s), but the bot won't resume automatically until you press Start on the dashboard.
+### Deflated Sharpe Ratio (DSR)
+DSR = PSR where `SR* = E[max Sharpe | N strategies]`.
+`SR* = (1−γ)Φ⁻¹(1−1/N) + γΦ⁻¹(1−1/(Ne))`, scaled by `√(252/T)` for the actual sample size.
+γ ≈ 0.5772 (Euler–Mascheroni constant). A DSR > 95% indicates the best strategy is unlikely to be the luckiest of N random strategies.
 
-Options: upgrade to Render's paid tier ($7/month), or set up an external cron ping (e.g., UptimeRobot on a free plan) to hit `/health` every 10 minutes and keep the service alive.
+### Fama-French 3-Factor Model
+`R_p − R_f = α + β_mkt(R_m−R_f) + β_smb·SMB + β_hml·HML + ε`
+Solved via OLS (`numpy.linalg.lstsq`). Factor data downloaded daily from Kenneth French's data library (Dartmouth). Alpha with |t| > 2 is considered statistically significant.
+Source: *Fama, E. F. & French, K. R. (1993). "Common risk factors in the returns on stocks and bonds." Journal of Financial Economics.*
 
-**Workers must stay at 1**
-`gunicorn.conf.py` enforces `workers = 1`. Do not override this. Multiple workers = multiple bot threads = duplicate Alpaca orders on the same account.
+### Markowitz Mean-Variance Optimization
+`min w^T Σ w` s.t. `Σw = 1, w_i ≥ 0` (long-only, fully invested).
+Max-Sharpe: minimise `−(w^T μ − r_f) / √(w^T Σ w)`.
+Solved with `scipy.optimize.minimize(method='SLSQP')`. All annualisation uses 252 trading days.
+Source: *Markowitz, H. (1952). "Portfolio Selection." Journal of Finance.*
+
+---
+
+## Test Suite
+
+```
+backend/tests/
+├── test_risk.py       44 tests  — trailing stop, Kelly sizing, risk profiles, daily limits
+├── test_features.py   13 tests  — SMA/RSI/MACD correctness on synthetic OHLCV data
+├── test_portfolio.py  17 tests  — Markowitz constraints, efficient frontier math
+└── test_stats.py      23 tests  — PSR/DSR math, FF3 CSV parsing, OLS regression
+```
+
+All 79 tests pass with zero network calls — every test uses synthetic in-memory data or monkeypatched API calls. Run with `pytest tests/ -v` from the `backend/` directory.
 
 ---
 
@@ -262,5 +368,12 @@ Options: upgrade to Render's paid tier ($7/month), or set up an external cron pi
 
 ## Author
 
-**Danny** — high school developer building a fintech engineering portfolio.
-Independent CS project demonstrating algorithmic systems, quantitative finance, and full-stack development.
+**Danny** — high school developer.
+Independent project demonstrating quantitative finance, statistical inference, and full-stack engineering.
+
+Key concepts implemented from scratch:
+- Wilder's ADX, Bollinger Bands, RSI (Wilder EMA smoothing), MACD
+- Kelly Criterion with Monte Carlo confirmation
+- Markowitz quadratic programming
+- Probabilistic and Deflated Sharpe Ratio (Lopez de Prado)
+- Fama-French 3-factor OLS decomposition
