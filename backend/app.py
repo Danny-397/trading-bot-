@@ -15,6 +15,7 @@ import backtest as backtester
 import bot
 import database
 import features  # noqa: F401 — imported so startup errors surface early
+import portfolio as portopt
 import regime as reg
 import risk
 import strategies
@@ -197,6 +198,7 @@ def run_backtest():
     risk_tolerance  = data.get('risk_tolerance', 'moderate')
     commission_pct  = float(data.get('commission_pct', 0.001))
     slippage_pct    = float(data.get('slippage_pct',   0.0005))
+    use_markowitz   = bool(data.get('use_markowitz', False))
 
     if strategy not in VALID_STRATEGIES:
         return jsonify({'error': 'Invalid strategy'}), 400
@@ -215,7 +217,37 @@ def run_backtest():
         strategy, tickers, start_date, end_date,
         initial_capital, walk_forward, risk_tolerance,
         commission_pct, slippage_pct,
+        use_markowitz=use_markowitz,
     )
+    return jsonify(result)
+
+
+# ── Portfolio optimization ─────────────────────────────────────────────────────
+
+@app.route('/api/portfolio/optimize', methods=['POST'])
+def optimize_portfolio():
+    """
+    Compute the Markowitz efficient frontier for the requested tickers.
+
+    Body (all optional):
+        tickers    — list of ticker symbols  (default: watchlist)
+        start_date — YYYY-MM-DD              (default: 1 year ago)
+        end_date   — YYYY-MM-DD              (default: today)
+        n_points   — frontier resolution     (default: 60)
+    """
+    data       = request.get_json() or {}
+    tickers    = data.get('tickers', strategies.WATCHLIST)
+    start_date = data.get('start_date',
+                          (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d'))
+    end_date   = data.get('end_date', datetime.now().strftime('%Y-%m-%d'))
+    n_points   = int(data.get('n_points', 60))
+
+    if not tickers or len(tickers) < 2:
+        return jsonify({'error': 'At least 2 tickers required'}), 400
+
+    result = portopt.compute_efficient_frontier(tickers, start_date, end_date, n_points)
+    if 'error' in result:
+        return jsonify(result), 422
     return jsonify(result)
 
 

@@ -33,6 +33,7 @@ import pandas as pd
 
 import features as feat
 import monte_carlo as mc
+import portfolio as portopt
 import regime as reg
 import risk
 
@@ -124,8 +125,9 @@ def run_backtest(
     initial_capital:  float = 100_000.0,
     walk_forward:     bool  = False,
     risk_tolerance:   str   = 'moderate',
-    commission_pct:   float = 0.001,   # 0.10% per trade side
-    slippage_pct:     float = 0.0005,  # 0.05% half-spread per side
+    commission_pct:   float = 0.001,
+    slippage_pct:     float = 0.0005,
+    use_markowitz:    bool  = False,
 ) -> dict:
     """
     Run a full backtest with transaction costs, rolling Kelly sizing,
@@ -143,6 +145,20 @@ def run_backtest(
         s = datetime.strptime(start_date, '%Y-%m-%d')
         e = datetime.strptime(end_date,   '%Y-%m-%d')
         split_date = (s + timedelta(days=int((e - s).days * 0.70))).strftime('%Y-%m-%d')
+
+    # ── Markowitz weights — fitted on training window only ─────────────────
+    # Using pre-split data avoids look-ahead bias: in walk-forward mode the
+    # optimiser only sees data the strategy would have had at decision time.
+    markowitz_weights: dict[str, float] = {}
+    if use_markowitz:
+        opt_end = split_date if (walk_forward and split_date) else end_date
+        mz      = portopt.compute_efficient_frontier(tickers, start_date, opt_end)
+        if 'max_sharpe' in mz:
+            markowitz_weights = mz['max_sharpe']['weights']
+            logger.info('Markowitz max-Sharpe weights: %s', markowitz_weights)
+        else:
+            logger.warning('Markowitz optimisation failed (%s) — using profile sizing',
+                           mz.get('error'))
 
     # ── SPY: regime series + benchmark (single download) ──────────────────
     regime_series: pd.Series | None = None
@@ -287,10 +303,16 @@ def run_backtest(
 
             # ── Buy signal ─────────────────────────────────────────────────
             elif signal == 1 and price > 0 and recording and signal_col is not None:
-                # Rolling Kelly sizing
-                kelly_f    = _kelly(kelly_wins, kelly_losses)
+                # When Markowitz is active, cap each ticker's allocation at its
+                # optimal weight — replaces the profile's fixed max_position_pct.
+                if markowitz_weights:
+                    mz_cap      = markowitz_weights.get(ticker, 1.0 / max(len(data), 1))
+                    sizing_prof = {**profile, 'max_position_pct': mz_cap}
+                else:
+                    sizing_prof = profile
+                kelly_f     = _kelly(kelly_wins, kelly_losses)
                 base_shares = risk.calculate_position_size_kelly(
-                    port_val, price, cash, kelly_f, profile)
+                    port_val, price, cash, kelly_f, sizing_prof)
                 shares = max(int(base_shares * size_mult), 0)
 
                 if shares > 0:
@@ -402,8 +424,9 @@ def run_backtest(
             'initial_capital':  initial_capital,
             'benchmark_return': round(benchmark_return, 2),
         },
-        'monte_carlo':      mc_result,
-        'regime_breakdown': _regime_breakdown(sell_trades),
+        'monte_carlo':        mc_result,
+        'markowitz_weights':  markowitz_weights if use_markowitz else None,
+        'regime_breakdown':   _regime_breakdown(sell_trades),
         'equity_curve':     port_hist,
         'spy_curve':        spy_curve,
         'trades':           trades[-200:],
