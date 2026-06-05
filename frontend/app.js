@@ -1,785 +1,824 @@
-/* ── Config ──────────────────────────────────────────────────────────────── */
-// Update API_BASE to your Render URL after deployment
+/* ══════════════════════════════════════════════════════════════════════════
+   TradeBot Research Platform — app.js
+   Vanilla JS · Chart.js 4 · No frameworks
+   ══════════════════════════════════════════════════════════════════════════ */
+
+// ── Config ─────────────────────────────────────────────────────────────────
 const API_BASE =
   (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
     ? 'http://localhost:5000'
-    : 'https://YOUR-RENDER-APP.onrender.com';   // ← update after deploy
+    : ''   // same-origin in production (Render serves frontend + backend together)
 
 const STRATEGY_LABELS = {
-  adaptive:     'Adaptive (Regime-Driven)',
-  ma_crossover: 'Moving Average Crossover',
+  adaptive:     'Adaptive (Regime-Based)',
+  ma_crossover: 'MA Crossover',
   rsi:          'RSI Mean Reversion',
   macd:         'MACD Momentum',
-  ml:           'ML Model',
-};
-
-const RISK_NOTES = {
-  conservative: 'Conservative: 3% stop-loss, 10% target, 5% max position. Sits out high-volatility regimes entirely.',
-  moderate:     'Moderate: 5% stop-loss, 15% target, 10% max position. Reduces size 50% in high-volatility regimes.',
-  aggressive:   'Aggressive: 7% stop-loss, 20% target, 15% max position. Trades at full size in all regimes.',
-};
-
-/* ── Helpers ─────────────────────────────────────────────────────────────── */
-async function api(path, opts = {}) {
-  const res = await fetch(API_BASE + path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  ml:           'ML (Stub)',
 }
 
-function fmt$(n)   { return '$' + (parseFloat(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function fmtPct(n) { const v = parseFloat(n) || 0; return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'; }
-function colorClass(n) { return parseFloat(n) > 0 ? 'positive' : parseFloat(n) < 0 ? 'negative' : ''; }
-function el(id)    { return document.getElementById(id); }
-function setText(id, val) { const e = el(id); if (e) e.textContent = val; }
-function setClass(id, cls) { const e = el(id); if (e) { e.className = e.className.replace(/positive|negative|neutral/g, '').trim() + (cls ? ' ' + cls : ''); }}
+const REGIME_COLORS = {
+  TRENDING_UP:     '#3fb950',
+  TRENDING_DOWN:   '#f85149',
+  RANGING:         '#e3b341',
+  HIGH_VOLATILITY: '#e3913b',
+}
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   LIVE DASHBOARD  (index.html)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-if (document.body.dataset.page === 'dashboard') {
-  let equityChart   = null;
-  let botRunning    = false;
-  let refreshTimer  = null;
-
-  /* ── Bot start/stop ─────────────────────────────────────────────────── */
-  el('bot-toggle').addEventListener('click', async () => {
-    const btn = el('bot-toggle');
-    btn.disabled = true;
-    try {
-      if (botRunning) {
-        await api('/api/stop', { method: 'POST' });
-      } else {
-        const strategy = el('strategy-select').value;
-        await api('/api/start', {
-          method: 'POST',
-          body: JSON.stringify({ strategy }),
-        });
-      }
-    } catch (e) {
-      // swallow — refreshAll will reflect the true state
-    } finally {
-      btn.disabled = false;
-      await refreshAll();
-    }
-  });
-
-  /* ── Strategy change ────────────────────────────────────────────────── */
-  el('strategy-select').addEventListener('change', async (e) => {
-    await api('/api/strategy', {
-      method: 'POST',
-      body:   JSON.stringify({ strategy: e.target.value }),
-    });
-  });
-
-  /* ── Main refresh ───────────────────────────────────────────────────── */
-  async function refreshAll() {
-    try {
-      const status = await api('/api/status');
-      updateControlBar(status);
-      updateStats(status);
-      updatePositions(status.portfolio?.positions || []);
-    } catch (e) { /* API not ready yet */ }
-
-    try {
-      const trades = await api('/api/trades?limit=20');
-      updateTrades(trades);
-    } catch (_) {}
-
-    try {
-      const history = await api('/api/portfolio/history?limit=500');
-      updateEquityChart(history);
-    } catch (_) {}
-
-    try {
-      const log = await api('/api/activity');
-      updateActivityLog(log);
-    } catch (_) {}
+// ── Utilities ───────────────────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  try {
+    const r = await fetch(API_BASE + path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...opts,
+    })
+    if (!r.ok) throw new Error('HTTP ' + r.status)
+    return r.json()
+  } catch (err) {
+    console.warn('API error:', path, err.message)
+    return null
   }
+}
 
-  function updateControlBar(status) {
-    botRunning = status.is_running;
+const el     = id => document.getElementById(id)
+const fmt$   = n  => n == null ? '—' : '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmtPct = (n, d = 2) => n == null ? '—' : (n >= 0 ? '+' : '') + Number(n).toFixed(d) + '%'
+const fmtN   = (n, d = 2) => n == null ? '—' : Number(n).toFixed(d)
+const clr    = n  => n == null ? '' : n > 0 ? 'positive' : n < 0 ? 'negative' : ''
+const today  = () => new Date().toISOString().slice(0, 10)
+const daysAgo = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10)
 
-    const dot  = el('bot-dot');
-    const text = el('bot-status-text');
-    const btn  = el('bot-toggle');
+function statCard(label, value, cls = '') {
+  return `<div class="stat-card"><div class="stat-value ${cls}">${value}</div><div class="stat-label">${label}</div></div>`
+}
 
+function weightBars(weights) {
+  return Object.entries(weights)
+    .sort((a, b) => b[1] - a[1])
+    .map(([ticker, w]) => `
+      <div class="weight-row">
+        <span class="weight-ticker">${ticker}</span>
+        <div class="weight-bar-track"><div class="weight-bar-fill" style="width:${Math.round(w * 100)}%"></div></div>
+        <span class="weight-pct">${(w * 100).toFixed(1)}%</span>
+      </div>`).join('')
+}
+
+Chart.defaults.color       = '#8b949e'
+Chart.defaults.borderColor = '#30363d'
+Chart.defaults.font.family = "'JetBrains Mono', monospace"
+Chart.defaults.font.size   = 11
+
+function destroyChart(c) { if (c) { try { c.destroy() } catch (_) {} } return null }
+
+function initTabs(root) {
+  root.querySelectorAll('.tab-list').forEach(list => {
+    const btns   = list.querySelectorAll('.tab-btn')
+    const card   = list.closest('.card') || list.parentElement
+    btns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        btns.forEach(b => b.classList.remove('active'))
+        card.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
+        btn.classList.add('active')
+        const target = el(btn.dataset.tab)
+        if (target) target.classList.add('active')
+      })
+    })
+  })
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+//  DASHBOARD
+// ════════════════════════════════════════════════════════════════════════════
+function initDashboard() {
+  let eqChart    = null
+  let botRunning = false
+
+  initTabs(document.body)
+
+  const startStopBtn   = el('start-stop-btn')
+  const strategySelect = el('strategy-select')
+  const riskBtns       = el('risk-btns')
+
+  startStopBtn.addEventListener('click', async () => {
+    startStopBtn.disabled = true
     if (botRunning) {
-      dot.className  = 'status-dot running';
-      text.textContent = 'BOT RUNNING';
-      btn.textContent  = 'STOP BOT';
-      btn.className    = 'btn btn-stop';
+      await api('/api/stop', { method: 'POST' })
     } else {
-      dot.className  = 'status-dot stopped';
-      text.textContent = 'BOT STOPPED';
-      btn.textContent  = 'START BOT';
-      btn.className    = 'btn btn-start';
+      await api('/api/start', { method: 'POST', body: JSON.stringify({ strategy: strategySelect.value }) })
     }
+    await refreshAll()
+    startStopBtn.disabled = false
+  })
 
-    const mp = el('market-status');
-    if (mp) {
-      mp.textContent = status.market_open ? 'MARKET OPEN' : 'MARKET CLOSED';
-      mp.className   = 'market-pill ' + (status.market_open ? 'open' : 'closed');
-    }
+  strategySelect.addEventListener('change', async () => {
+    await api('/api/strategy', { method: 'POST', body: JSON.stringify({ strategy: strategySelect.value }) })
+  })
 
-    const sel = el('strategy-select');
-    if (sel && status.strategy) sel.value = status.strategy;
+  riskBtns.querySelectorAll('.risk-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      riskBtns.querySelectorAll('.risk-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+      await api('/api/risk_tolerance', { method: 'POST', body: JSON.stringify({ tolerance: btn.dataset.risk }) })
+    })
+  })
 
-    updateRegimePanel(status.regime);
-    updateRiskButtons(status.risk_tolerance);
+  async function refreshAll() {
+    const [status, history, trades, activity] = await Promise.all([
+      api('/api/status'),
+      api('/api/portfolio/history?limit=500'),
+      api('/api/trades?limit=20'),
+      api('/api/activity'),
+    ])
+    if (status)   updateFromStatus(status)
+    if (history)  updateEquityChart(history)
+    if (trades)   updateTradesFeed(trades)
+    if (activity) updateActivityLog(activity)
   }
 
-  function updateStats(status) {
-    const p  = status.portfolio    || {};
-    const m  = status.metrics      || {};
-    const lm = status.live_metrics || {};
+  function updateFromStatus(s) {
+    botRunning = s.is_running
 
-    setText('stat-value', fmt$(p.portfolio_value ?? 0));
-    const ret = parseFloat(p.total_return ?? 0);
-    setText('stat-return', fmtPct(ret));
-    setClass('stat-return', colorClass(ret));
+    const dot = el('bot-dot')
+    dot.className = 'dot ' + (s.is_running ? 'dot-green' : 'dot-red')
+    el('bot-status-text').textContent = s.is_running ? 'BOT RUNNING' : 'BOT STOPPED'
+    el('strategy-label').textContent  = STRATEGY_LABELS[s.strategy] || s.strategy || '—'
 
-    const wr = parseFloat(m.win_rate ?? 0);
-    setText('stat-winrate', wr.toFixed(1) + '%');
-    setClass('stat-winrate', wr >= 50 ? 'positive' : wr > 0 ? 'neutral' : '');
+    const mkt = el('market-status-badge')
+    mkt.textContent = s.market_open ? 'MARKET OPEN' : 'MARKET CLOSED'
+    mkt.className   = 'badge ' + (s.market_open ? 'badge-green' : 'badge-red')
 
-    setText('stat-positions', p.active_positions ?? 0);
+    startStopBtn.textContent = s.is_running ? 'STOP BOT' : 'START BOT'
+    startStopBtn.className   = 'btn ' + (s.is_running ? 'btn-danger' : 'btn-primary')
+    startStopBtn.style.width = '100%'
+    startStopBtn.style.marginTop = '4px'
 
-    const dt  = status.daily_trades ?? 0;
-    const max = status.max_daily    ?? 10;
-    const sub = el('stat-positions-sub');
-    if (sub) sub.textContent = `${dt} / ${max} daily trades used`;
+    if (strategySelect.value !== s.strategy && s.strategy)
+      strategySelect.value = s.strategy
 
-    const sharpe = parseFloat(lm.sharpe_ratio ?? 0);
-    setText('stat-sharpe', sharpe.toFixed(2));
-    setClass('stat-sharpe', colorClass(sharpe));
+    riskBtns.querySelectorAll('.risk-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.risk === s.risk_tolerance)
+    })
 
-    const dd = parseFloat(lm.max_drawdown ?? 0);
-    setText('stat-drawdown', '-' + dd.toFixed(2) + '%');
-    setClass('stat-drawdown', dd > 0 ? 'negative' : '');
+    const p = s.portfolio || {}
+    const rv = el('hero-value')
+    rv.textContent = fmt$(p.portfolio_value)
+    rv.className   = 'hero-stat-value'
+
+    const rr = el('hero-return')
+    rr.textContent = fmtPct(p.total_return)
+    rr.className   = 'hero-stat-value ' + clr(p.total_return)
+
+    el('hero-daily').textContent     = fmt$(p.equity)
+    el('hero-positions').textContent = p.active_positions ?? 0
+
+    updatePositions(p.positions || [])
+    if (s.regime) updateRegime(s.regime)
+
+    const m  = s.metrics     || {}
+    const lv = s.live_metrics || {}
+    el('perf-winrate').textContent  = m.win_rate  != null ? m.win_rate + '%' : '—'
+    el('perf-sharpe').textContent   = fmtN(lv.sharpe_ratio)
+    el('perf-drawdown').textContent = lv.max_drawdown != null ? '-' + fmtN(lv.max_drawdown) + '%' : '—'
+    el('perf-kelly').textContent    = s.kelly_fraction != null ? fmtN(s.kelly_fraction) + '%' : '—'
+    el('perf-trades').textContent   = m.total_trades ?? '—'
+    el('perf-daily').textContent    = (s.daily_trades ?? 0) + ' / ' + (s.max_daily ?? '?')
   }
 
   function updatePositions(positions) {
-    const tbody = el('positions-tbody');
-    const badge = el('positions-count');
-    if (!tbody) return;
-
-    if (badge) badge.textContent = positions.length;
-
+    const tbody = el('positions-tbody')
     if (!positions.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No open positions</td></tr>';
-      return;
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">No open positions</td></tr>`
+      return
     }
-
-    tbody.innerHTML = positions.map(p => {
-      const pnlClass = colorClass(p.pnl);
-      return `
-        <tr>
-          <td><strong>${p.ticker}</strong></td>
-          <td>${p.shares}</td>
-          <td>${fmt$(p.entry_price)}</td>
-          <td>${fmt$(p.current_price)}</td>
-          <td class="${pnlClass}">${fmtPct(p.pnl_pct)}</td>
-          <td class="negative">${fmt$(p.stop_loss)}</td>
-          <td class="positive">${fmt$(p.take_profit)}</td>
-        </tr>`;
-    }).join('');
+    tbody.innerHTML = positions.map(p => `
+      <tr>
+        <td><strong>${p.ticker}</strong></td>
+        <td>${fmtN(p.shares, 0)}</td>
+        <td>${fmt$(p.entry_price)}</td>
+        <td>${fmt$(p.current_price)}</td>
+        <td class="${clr(p.pnl_pct)}">${fmtPct(p.pnl_pct)}</td>
+        <td class="negative">${fmt$(p.stop_loss)}</td>
+        <td class="positive">${fmt$(p.take_profit)}</td>
+      </tr>`).join('')
   }
 
-  function updateTrades(trades) {
-    const feed = el('trades-feed');
-    if (!feed) return;
-    if (!trades.length) {
-      feed.innerHTML = '<div class="empty-state">No trades yet</div>';
-      return;
-    }
-    feed.innerHTML = trades.map(t => {
-      const ts     = t.timestamp ? t.timestamp.slice(11, 19) : '—';
-      const action = t.action === 'BUY'
-        ? '<span class="badge badge-buy">BUY</span>'
-        : '<span class="badge badge-sell">SELL</span>';
-      const pnl = t.pnl != null
-        ? `<span class="${colorClass(t.pnl)}">${fmtPct(t.pnl_pct)}</span>`
-        : '<span class="neutral">—</span>';
-      return `
-        <div class="trade-row">
-          <span class="trade-time">${ts}</span>
-          ${action}
-          <strong>${t.ticker}</strong>
-          <span>${fmt$(t.price)}</span>
-          <span>${t.shares}</span>
-          ${pnl}
-        </div>`;
-    }).join('');
+  function updateRegime(r) {
+    const badge = el('regime-badge')
+    badge.textContent = (r.label || r.regime || 'UNKNOWN').toUpperCase()
+    badge.className   = 'regime-badge ' + (r.regime || '')
+    el('regime-description').textContent = r.description || ''
+    el('ri-adx').textContent = r.adx    != null ? fmtN(r.adx, 1)        : '—'
+    el('ri-vol').textContent = r.vol_30d != null ? fmtN(r.vol_30d, 1) + '%' : '—'
+    el('ri-bbw').textContent = r.bb_width != null ? fmtN(r.bb_width, 4)  : '—'
+    el('regime-strategy').textContent = STRATEGY_LABELS[r.strategy] || r.strategy || '—'
   }
 
   function updateEquityChart(history) {
-    if (!history.length) return;
-    const ctx = el('equity-chart');
-    if (!ctx) return;
-
-    const labels = history.map(h => h.timestamp ? h.timestamp.slice(0, 16).replace('T', ' ') : '');
-    const values = history.map(h => h.portfolio_value);
-
-    if (equityChart) {
-      equityChart.data.labels   = labels;
-      equityChart.data.datasets[0].data = values;
-      equityChart.update('none');
-      return;
+    if (!history.length) return
+    const labels = history.map(p => (p.timestamp || '').slice(0, 10))
+    const values = history.map(p => p.portfolio_value)
+    const ctx = el('eq-chart').getContext('2d')
+    if (eqChart) {
+      eqChart.data.labels = labels
+      eqChart.data.datasets[0].data = values
+      eqChart.update('none')
+      return
     }
-
-    equityChart = new Chart(ctx, {
+    eqChart = new Chart(ctx, {
       type: 'line',
       data: {
         labels,
         datasets: [{
-          label:           'Portfolio Value',
           data:            values,
           borderColor:     '#58a6ff',
-          backgroundColor: 'rgba(88,166,255,0.08)',
           borderWidth:     2,
-          pointRadius:     0,
-          tension:         0.3,
+          backgroundColor: 'rgba(88,166,255,0.08)',
           fill:            true,
+          tension:         0.3,
+          pointRadius:     0,
+          pointHoverRadius: 4,
         }],
       },
       options: {
-        responsive:          true,
-        maintainAspectRatio: false,
-        interaction:         { mode: 'index', intersect: false },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: '#161b22',
-            borderColor:     '#21262d',
-            borderWidth:     1,
-            titleColor:      '#7d8590',
-            bodyColor:       '#e6edf3',
-            callbacks: { label: ctx => ' ' + fmt$(ctx.parsed.y) },
-          },
-        },
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' ' + fmt$(c.parsed.y) } } },
         scales: {
-          x: {
-            ticks:  { color: '#7d8590', maxTicksLimit: 8, font: { family: 'monospace', size: 10 } },
-            grid:   { color: '#21262d' },
-          },
-          y: {
-            ticks:  { color: '#7d8590', callback: v => '$' + v.toLocaleString(), font: { family: 'monospace', size: 10 } },
-            grid:   { color: '#21262d' },
-          },
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 6, maxRotation: 0 } },
+          y: { grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } },
         },
       },
-    });
+    })
+  }
+
+  function updateTradesFeed(trades) {
+    const tbody = el('trades-tbody')
+    if (!trades.length) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">No trades yet — start the bot to begin trading</td></tr>`
+      return
+    }
+    tbody.innerHTML = trades.map(t => {
+      const isBuy = t.action === 'BUY'
+      return `<tr>
+        <td>${(t.timestamp || '').slice(11, 19)}</td>
+        <td><strong>${t.ticker}</strong></td>
+        <td><span class="badge ${isBuy ? 'badge-buy' : 'badge-sell'}">${t.action}</span></td>
+        <td>${fmt$(t.price)}</td>
+        <td>${fmtN(t.shares, 0)}</td>
+        <td class="${clr(t.pnl)}">${t.pnl != null ? fmt$(t.pnl) : '—'}</td>
+        <td>${t.pnl_pct != null ? fmtPct(t.pnl_pct) : '—'}</td>
+      </tr>`
+    }).join('')
   }
 
   function updateActivityLog(lines) {
-    const log = el('activity-log');
-    if (!log) return;
-    if (!lines.length) {
-      log.innerHTML = '<div class="log-empty">No activity yet</div>';
-      return;
-    }
-    log.innerHTML = lines.map(l => `<div class="log-line">${escHtml(l)}</div>`).join('');
+    const box = el('activity-log')
+    if (!lines.length) return
+    box.innerHTML = lines.map(l => `<div class="log-line">${l}</div>`).join('')
   }
 
-  function escHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
-
-  // ── Risk tolerance buttons ───────────────────────────────────────────────
-  document.querySelectorAll('.risk-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const tol = btn.dataset.tol;
-      try {
-        await api('/api/risk_tolerance', {
-          method: 'POST',
-          body: JSON.stringify({ tolerance: tol }),
-        });
-        document.querySelectorAll('.risk-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const note = el('risk-note');
-        if (note) note.textContent = RISK_NOTES[tol] || '';
-      } catch (_) {}
-    });
-  });
-
-  function updateRegimePanel(regime) {
-    if (!regime) return;
-    const badge   = el('regime-badge');
-    const label   = el('regime-label');
-    const desc    = el('regime-desc');
-    const strat   = el('regime-strategy');
-    const adxEl   = el('ri-adx');
-    const volEl   = el('ri-vol');
-    const bbwEl   = el('ri-bbw');
-
-    if (badge) {
-      badge.textContent = regime.label || regime.regime;
-      badge.className   = 'regime-badge ' + (regime.regime || '');
-    }
-    if (label) {
-      label.textContent = regime.label || regime.regime;
-      label.className   = 'regime-label ' + (regime.regime || '');
-    }
-    if (desc)  desc.textContent  = regime.description || '—';
-    if (strat) strat.textContent = STRATEGY_LABELS[regime.strategy] || regime.strategy || '—';
-    if (adxEl) adxEl.textContent = regime.adx != null ? regime.adx.toFixed(1) : '—';
-    if (volEl) volEl.textContent = regime.vol_30d != null ? regime.vol_30d.toFixed(1) + '%' : '—';
-    if (bbwEl) bbwEl.textContent = regime.bb_width != null ? regime.bb_width.toFixed(3) : '—';
-  }
-
-  function updateRiskButtons(tolerance) {
-    if (!tolerance) return;
-    document.querySelectorAll('.risk-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.tol === tolerance);
-    });
-    const note = el('risk-note');
-    if (note) note.textContent = RISK_NOTES[tolerance] || '';
-  }
-
-  // Kick off
-  refreshAll();
-  refreshTimer = setInterval(refreshAll, 10_000);
+  refreshAll()
+  setInterval(refreshAll, 10000)
 }
 
-/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   BACKTEST PAGE  (backtest.html)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-if (document.body.dataset.page === 'backtest') {
-  let btChart = null;
+// ════════════════════════════════════════════════════════════════════════════
+//  BACKTEST
+// ════════════════════════════════════════════════════════════════════════════
+function initBacktest() {
+  let btChart  = null
+  let mcChart  = null
+  let ff3Chart = null
 
-  // Ticker chip selection
-  document.querySelectorAll('.ticker-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      chip.classList.toggle('selected');
-    });
-  });
+  el('bt-start').value = daysAgo(365)
+  el('bt-end').value   = today()
 
-  // Default date range: last 1 year
-  const today    = new Date();
-  const oneYrAgo = new Date(today);
-  oneYrAgo.setFullYear(oneYrAgo.getFullYear() - 1);
-  const fmt = d => d.toISOString().slice(0, 10);
-  const startEl = el('bt-start');
-  const endEl   = el('bt-end');
-  if (startEl) startEl.value = fmt(oneYrAgo);
-  if (endEl)   endEl.value   = fmt(today);
+  el('bt-tickers').querySelectorAll('.ticker-chip').forEach(chip => {
+    chip.addEventListener('click', () => chip.classList.toggle('selected'))
+  })
 
-  el('bt-run')?.addEventListener('click', runBacktest);
+  el('bt-risk-btns').querySelectorAll('.risk-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      el('bt-risk-btns').querySelectorAll('.risk-btn').forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+    })
+  })
+
+  el('run-btn').addEventListener('click', runBacktest)
 
   async function runBacktest() {
-    const selectedTickers = [...document.querySelectorAll('.ticker-chip.selected')]
-      .map(c => c.dataset.ticker);
+    const tickers = [...el('bt-tickers').querySelectorAll('.ticker-chip.selected')]
+      .map(c => c.dataset.ticker)
+    if (!tickers.length) { alert('Select at least one ticker.'); return }
 
-    if (!selectedTickers.length) {
-      alert('Select at least one ticker.');
-      return;
-    }
-
-    const btn = el('bt-run');
-    btn.disabled     = true;
-    btn.innerHTML    = '<span class="spinner"></span> RUNNING…';
-
-    const riskRadio = document.querySelector('input[name="bt-risk"]:checked');
+    const riskEl = el('bt-risk-btns').querySelector('.risk-btn.active')
+    const commPct = parseFloat(el('bt-commission').value) || 0.10
+    const slipPct = parseFloat(el('bt-slippage').value)  || 0.05
     const payload = {
       strategy:        el('bt-strategy').value,
-      tickers:         selectedTickers,
+      tickers,
       start_date:      el('bt-start').value,
       end_date:        el('bt-end').value,
-      initial_capital: parseFloat(el('bt-capital').value) || 100_000,
-      walk_forward:    el('bt-walkforward')?.checked ?? false,
-      risk_tolerance:  riskRadio ? riskRadio.value : 'moderate',
-      commission_pct:  (parseFloat(el('bt-commission')?.value) || 0.10) / 100,
-      slippage_pct:    (parseFloat(el('bt-slippage')?.value)   || 0.05) / 100,
-    };
-
-    try {
-      const result = await api('/api/backtest', {
-        method: 'POST',
-        body:   JSON.stringify(payload),
-      });
-
-      if (result.error) {
-        alert('Backtest error: ' + result.error);
-        return;
-      }
-
-      renderResults(result, payload);
-    } catch (e) {
-      alert('Request failed. Is the backend running?');
-    } finally {
-      btn.disabled  = false;
-      btn.innerHTML = 'RUN BACKTEST';
+      initial_capital: parseFloat(el('bt-capital').value) || 100000,
+      walk_forward:    el('bt-walkforward').checked,
+      risk_tolerance:  riskEl ? riskEl.dataset.risk : 'moderate',
+      commission_pct:  commPct / 100,
+      slippage_pct:    slipPct / 100,
+      use_markowitz:   el('bt-markowitz').checked,
     }
+
+    el('empty-state').hidden      = true
+    el('results-container').hidden = true
+    el('loading-state').hidden    = false
+    el('run-btn').disabled        = true
+
+    const data = await api('/api/backtest', { method: 'POST', body: JSON.stringify(payload) })
+
+    el('loading-state').hidden = true
+    el('run-btn').disabled     = false
+
+    if (!data || data.error) {
+      el('empty-state').hidden = false
+      el('empty-state').querySelector('strong').textContent =
+        'Error: ' + (data?.error || 'Request failed — is the backend running?')
+      return
+    }
+
+    btChart  = destroyChart(btChart)
+    mcChart  = destroyChart(mcChart)
+    ff3Chart = destroyChart(ff3Chart)
+
+    renderResults(data)
+    el('results-container').hidden = false
+    initTabs(el('results-container'))
   }
 
-  function renderResults(result, payload) {
-    const m = result.metrics;
+  function renderResults(data) {
+    const m = data.metrics || {}
 
-    // Show results section
-    el('bt-results').classList.add('visible');
-
-    // Scroll to results
-    el('bt-results').scrollIntoView({ behavior: 'smooth' });
-
-    // Stat cards
-    const retClass = colorClass(m.total_return);
-    el('r-return').innerHTML      = `<span class="${retClass}">${fmtPct(m.total_return)}</span>`;
-    el('r-final').textContent     = fmt$(m.final_value);
-    el('r-winrate').innerHTML     = `<span class="${parseFloat(m.win_rate) >= 50 ? 'positive' : 'negative'}">${m.win_rate}%</span>`;
-    el('r-trades').textContent    = m.total_trades;
-    el('r-drawdown').innerHTML    = `<span class="negative">-${m.max_drawdown}%</span>`;
-    el('r-sharpe').innerHTML      = `<span class="${colorClass(m.sharpe_ratio)}">${m.sharpe_ratio}</span>`;
-    el('r-avgwin').innerHTML      = `<span class="positive">${fmt$(m.avg_win)}</span>`;
-    el('r-avgloss').innerHTML     = `<span class="negative">${fmt$(m.avg_loss)}</span>`;
-    el('r-best').innerHTML        = `<span class="positive">${fmt$(m.best_trade)}</span>`;
-    el('r-worst').innerHTML       = `<span class="negative">${fmt$(m.worst_trade)}</span>`;
-    el('r-benchmark').innerHTML   = `<span class="${colorClass(m.benchmark_return)}">${fmtPct(m.benchmark_return)}</span>`;
-    el('r-calmar').innerHTML  = `<span class="${colorClass(m.calmar_ratio)}">${(m.calmar_ratio ?? 0).toFixed(2)}</span>`;
-
-    // Kelly fraction
-    const kellyEl = el('r-kelly');
-    if (kellyEl) {
-      if (m.kelly_fraction != null) {
-        kellyEl.innerHTML = `<span class="${colorClass(m.kelly_fraction)}">${m.kelly_fraction.toFixed(1)}%</span>`;
-      } else {
-        kellyEl.innerHTML = '<span class="neutral">N/A</span>';
-        const ksub = kellyEl.nextElementSibling;
-        if (ksub) ksub.textContent = '< 10 trades (using fixed sizing)';
-      }
+    const wfb = el('wf-banner')
+    if (data.walk_forward?.enabled && data.walk_forward.split_date) {
+      wfb.hidden = false
+      el('wf-split-date').textContent = data.walk_forward.split_date
+    } else {
+      wfb.hidden = true
     }
 
-    // Gross return vs net
-    const grossRetClass = colorClass(m.gross_return);
-    el('r-gross').innerHTML = `<span class="${grossRetClass}">${fmtPct(m.gross_return)}</span>`;
-    const costsSub = el('r-costs-sub');
-    if (costsSub && m.total_costs != null) {
-      costsSub.textContent = `Costs: ${fmt$(m.total_costs)} total`;
-    }
+    el('summary-stats').innerHTML = [
+      statCard('Total Return', fmtPct(m.total_return), clr(m.total_return)),
+      statCard('Final Value',  fmt$(m.final_value)),
+      statCard('Sharpe Ratio', fmtN(m.sharpe_ratio), m.sharpe_ratio > 1 ? 'positive' : m.sharpe_ratio < 0 ? 'negative' : ''),
+      statCard('Max Drawdown', m.max_drawdown != null ? '-' + fmtN(m.max_drawdown) + '%' : '—', 'negative'),
+    ].join('')
 
-    // Walk-forward banner
-    const wf = result.walk_forward || {};
-    const banner = el('wf-banner');
-    if (banner) {
-      if (wf.enabled && wf.split_date) {
-        el('wf-split-date').textContent = wf.split_date;
-        banner.style.display = 'block';
-      } else {
-        banner.style.display = 'none';
-      }
-    }
-
-    // Chart
-    renderBtChart(result.equity_curve, result.spy_curve, payload.initial_capital);
-
-    // Monte Carlo
-    renderMonteCarlo(result.monte_carlo, result.equity_curve, payload.initial_capital);
-
-    // Regime breakdown
-    renderRegimeBreakdown(result.regime_breakdown || {});
-
-    // Trade table
-    renderTradeTable(result.trades || []);
+    renderBtChart(data)
+    renderSecondaryStats(m)
+    renderRegimeBreakdown(data.regime_breakdown || {})
+    renderMonteCarlo(data.monte_carlo, data.equity_curve)
+    renderResearchTab(data)
+    renderTradesTable(data.trades || [])
   }
 
-  function renderBtChart(curve, spyCurve, initialCapital) {
-    const ctx = el('bt-chart');
-    if (!ctx) return;
+  function renderBtChart(data) {
+    const curve = data.equity_curve || []
+    const spy   = data.spy_curve    || []
+    if (!curve.length) return
+    const capital = data.metrics?.initial_capital || curve[0]?.value || 100000
+    const datasets = [
+      {
+        label: 'Strategy', data: curve.map(p => p.value),
+        borderColor: '#58a6ff', borderWidth: 2,
+        backgroundColor: 'rgba(88,166,255,0.06)', fill: true, tension: 0.2, pointRadius: 0,
+      },
+    ]
+    if (spy.length) datasets.push({
+      label: 'SPY Benchmark', data: spy.map(p => p.value),
+      borderColor: '#e3b341', borderWidth: 1.5, borderDash: [4, 4],
+      fill: false, tension: 0.2, pointRadius: 0,
+    })
+    datasets.push({
+      label: 'Initial Capital', data: curve.map(() => capital),
+      borderColor: '#30363d', borderWidth: 1, borderDash: [2, 4],
+      fill: false, pointRadius: 0,
+    })
 
-    const labels = curve.map(p => p.date);
-    const stratData = curve.map(p => p.value);
-
-    // Align spy curve to same labels
-    const spyMap = {};
-    (spyCurve || []).forEach(p => { spyMap[p.date] = p.value; });
-    const spyData = labels.map(d => spyMap[d] ?? null);
-
-    // Initial capital reference line
-    const initLine = labels.map(() => initialCapital);
-
-    if (btChart) {
-      btChart.destroy();
-    }
-
-    btChart = new Chart(ctx, {
+    btChart = new Chart(el('bt-chart').getContext('2d'), {
       type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            label:           'Strategy',
-            data:            stratData,
-            borderColor:     '#58a6ff',
-            backgroundColor: 'rgba(88,166,255,0.07)',
-            borderWidth:     2,
-            pointRadius:     0,
-            tension:         0.2,
-            fill:            true,
-          },
-          {
-            label:       'SPY Buy & Hold',
-            data:        spyData,
-            borderColor: '#7d8590',
-            borderWidth: 1.5,
-            pointRadius: 0,
-            borderDash:  [5, 4],
-            tension:     0.2,
-          },
-          {
-            label:       'Starting Capital',
-            data:        initLine,
-            borderColor: '#30363d',
-            borderWidth: 1,
-            pointRadius: 0,
-            borderDash:  [3, 3],
-          },
-        ],
-      },
+      data: { labels: curve.map(p => p.date), datasets },
       options: {
-        responsive:          true,
-        maintainAspectRatio: false,
-        interaction:         { mode: 'index', intersect: false },
-        plugins: {
-          legend: {
-            display:  true,
-            position: 'top',
-            labels:   { color: '#7d8590', font: { family: 'monospace', size: 11 }, boxWidth: 20 },
-          },
-          tooltip: {
-            backgroundColor: '#161b22',
-            borderColor:     '#21262d',
-            borderWidth:     1,
-            titleColor:      '#7d8590',
-            bodyColor:       '#e6edf3',
-            callbacks: { label: c => ` ${c.dataset.label}: ${fmt$(c.parsed.y)}` },
-          },
-        },
-        scales: {
-          x: {
-            ticks: { color: '#7d8590', maxTicksLimit: 10, font: { family: 'monospace', size: 10 } },
-            grid:  { color: '#21262d' },
-          },
-          y: {
-            ticks: { color: '#7d8590', callback: v => '$' + v.toLocaleString(), font: { family: 'monospace', size: 10 } },
-            grid:  { color: '#21262d' },
-          },
-        },
-      },
-    });
-  }
-
-  let mcChart = null;
-
-  function renderMonteCarlo(mc, equityCurve, initialCapital) {
-    const panel = el('mc-panel');
-    if (!panel || !mc || !mc.enabled) {
-      if (panel) panel.style.display = 'none';
-      return;
-    }
-    panel.style.display = 'block';
-
-    // ── Headline ────────────────────────────────────────────────────────────
-    const pct     = mc.actual_percentile;
-    const sPct    = mc.sharpe_percentile;
-    const rankEl  = el('mc-rank-badge');
-    const headEl  = el('mc-headline');
-
-    if (rankEl) {
-      rankEl.textContent = `${pct.toFixed(0)}th percentile`;
-      rankEl.className   = 'mc-rank-badge ' +
-        (pct >= 75 ? 'strong' : pct >= 40 ? 'moderate' : 'weak');
-    }
-
-    if (headEl) {
-      const strength = pct >= 75
-        ? 'statistically meaningful'
-        : pct >= 40 ? 'within normal random variation' : 'weaker than most random paths';
-      headEl.innerHTML =
-        `Your strategy's return ranks in the <strong>${pct.toFixed(0)}th percentile</strong> of ` +
-        `${mc.n_simulations.toLocaleString()} random resampled paths — ` +
-        `<strong>${strength}</strong>. ` +
-        `Its Sharpe ratio ranks in the <strong>${sPct.toFixed(0)}th percentile</strong> of simulated Sharpe ratios.`;
-    }
-
-    // ── Fan chart ────────────────────────────────────────────────────────────
-    const fan   = mc.fan_chart;
-    const ctx   = el('mc-chart');
-    if (!ctx || !fan) return;
-
-    // Align actual equity curve to fan chart dates
-    const actualMap = {};
-    (equityCurve || []).forEach(p => { actualMap[p.date] = p.value; });
-    const actualData = fan.dates.map(d => actualMap[d] ?? null);
-
-    if (mcChart) { mcChart.destroy(); mcChart = null; }
-
-    mcChart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: fan.dates,
-        datasets: [
-          // Outer band (P95 fills down to P5)
-          {
-            label: 'P95',
-            data:  fan.p95,
-            fill:  1,
-            borderColor: 'transparent',
-            backgroundColor: 'rgba(88,166,255,0.06)',
-            pointRadius: 0,
-          },
-          {
-            label: 'P5',
-            data:  fan.p5,
-            fill:  false,
-            borderColor: 'transparent',
-            pointRadius: 0,
-          },
-          // Inner band (P75 fills down to P25)
-          {
-            label: 'P75',
-            data:  fan.p75,
-            fill:  3,
-            borderColor: 'transparent',
-            backgroundColor: 'rgba(88,166,255,0.11)',
-            pointRadius: 0,
-          },
-          {
-            label: 'P25',
-            data:  fan.p25,
-            fill:  false,
-            borderColor: 'transparent',
-            pointRadius: 0,
-          },
-          // Median
-          {
-            label: 'Median (P50)',
-            data:  fan.p50,
-            fill:  false,
-            borderColor: 'rgba(88,166,255,0.35)',
-            borderDash: [5, 4],
-            borderWidth: 1.5,
-            pointRadius: 0,
-          },
-          // Actual strategy
-          {
-            label: 'Your Strategy',
-            data:  actualData,
-            fill:  false,
-            borderColor: '#58a6ff',
-            borderWidth: 2.5,
-            pointRadius: 0,
-            tension: 0.2,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: {
-            display: true,
-            position: 'top',
-            labels: {
-              filter: item => ['Median (P50)', 'Your Strategy', 'P95', 'P25'].includes(item.text),
-              color: '#7d8590',
-              font: { family: 'monospace', size: 10 },
-              boxWidth: 16,
-            },
-          },
-          tooltip: {
-            backgroundColor: '#161b22',
-            borderColor: '#21262d',
-            borderWidth: 1,
-            titleColor: '#7d8590',
-            bodyColor: '#e6edf3',
-            callbacks: {
-              label: c => {
-                if (['P5', 'P75'].includes(c.dataset.label)) return null;
-                return ` ${c.dataset.label}: ${fmt$(c.parsed.y)}`;
-              },
-            },
-          },
+          legend: { position: 'top', labels: { boxWidth: 12, usePointStyle: true } },
+          tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + fmt$(c.parsed.y) } },
         },
         scales: {
-          x: { ticks: { color: '#7d8590', maxTicksLimit: 8, font: { family: 'monospace', size: 10 } }, grid: { color: '#21262d' } },
-          y: { ticks: { color: '#7d8590', callback: v => '$' + v.toLocaleString(), font: { family: 'monospace', size: 10 } }, grid: { color: '#21262d' } },
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 8, maxRotation: 0 } },
+          y: { grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } },
         },
       },
-    });
+    })
+  }
 
-    // ── Distribution tables ──────────────────────────────────────────────────
-    const dist = mc.return_distribution;
-    const shar = mc.sharpe_distribution;
-    const pctiles = [['5th', 'p5'], ['25th', 'p25'], ['50th (median)', 'p50'], ['75th', 'p75'], ['95th', 'p95']];
-
-    const rTbody = el('mc-return-tbody');
-    const sTbody = el('mc-sharpe-tbody');
-
-    if (rTbody) rTbody.innerHTML = pctiles.map(([lbl, key]) =>
-      `<tr><td>${lbl}</td><td class="${colorClass(dist[key])}">${fmtPct(dist[key])}</td></tr>`
-    ).join('');
-
-    if (sTbody) sTbody.innerHTML = pctiles.map(([lbl, key]) =>
-      `<tr><td>${lbl}</td><td class="${colorClass(shar[key])}">${(shar[key] ?? 0).toFixed(2)}</td></tr>`
-    ).join('');
+  function renderSecondaryStats(m) {
+    el('secondary-stats').innerHTML = [
+      statCard('Win Rate',      m.win_rate  != null ? m.win_rate + '%' : '—'),
+      statCard('Total Trades',  m.total_trades ?? '—'),
+      statCard('Avg Win',       fmt$(m.avg_win),       'positive'),
+      statCard('Avg Loss',      fmt$(m.avg_loss),      'negative'),
+      statCard('Best Trade',    fmt$(m.best_trade),    'positive'),
+      statCard('Worst Trade',   fmt$(m.worst_trade),   'negative'),
+      statCard('Calmar Ratio',  fmtN(m.calmar_ratio)),
+      statCard('Kelly %',       m.kelly_fraction != null ? fmtN(m.kelly_fraction) + '%' : '—'),
+      statCard('Gross Return',  fmtPct(m.gross_return)),
+      statCard('vs SPY',        fmtPct(m.benchmark_return), clr((m.total_return || 0) - (m.benchmark_return || 0))),
+    ].join('')
   }
 
   function renderRegimeBreakdown(breakdown) {
-    const panel = el('regime-breakdown-panel');
-    const tbody = el('regime-breakdown-tbody');
-    if (!panel || !tbody) return;
-
-    const rows = Object.entries(breakdown);
-    if (!rows.length) {
-      panel.style.display = 'none';
-      return;
-    }
-
-    panel.style.display = 'block';
-    tbody.innerHTML = rows
-      .sort((a, b) => b[1].trade_count - a[1].trade_count)
-      .map(([regimeName, d]) => {
-        const wrClass  = parseFloat(d.win_rate) >= 50 ? 'positive' : 'negative';
-        const pnlClass = colorClass(d.total_pnl);
-        return `
-          <tr>
-            <td><span class="regime-badge ${regimeName}">${d.label}</span></td>
-            <td>${d.trade_count}</td>
-            <td class="${wrClass}">${d.win_rate}%</td>
-            <td class="${pnlClass}">${fmt$(d.total_pnl)}</td>
-            <td class="${colorClass(d.avg_pnl)}">${fmt$(d.avg_pnl)}</td>
-            <td class="positive">${fmt$(d.best_trade)}</td>
-            <td class="negative">${fmt$(d.worst_trade)}</td>
-          </tr>`;
-      }).join('');
+    const box     = el('regime-breakdown')
+    const entries = Object.entries(breakdown)
+    if (!entries.length) { box.innerHTML = ''; return }
+    box.innerHTML = `
+      <div class="section-header" style="margin-top:20px;">Performance by Market Regime</div>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr>
+          <th>Regime</th><th>Trades</th><th>Win Rate</th>
+          <th>Total P&L</th><th>Avg P&L</th><th>Best</th><th>Worst</th>
+        </tr></thead>
+        <tbody>${entries.map(([r, v]) => `<tr>
+          <td><span style="color:${REGIME_COLORS[r] || '#8b949e'};font-weight:700;">${v.label || r}</span></td>
+          <td>${v.trade_count}</td>
+          <td>${v.win_rate}%</td>
+          <td class="${clr(v.total_pnl)}">${fmt$(v.total_pnl)}</td>
+          <td class="${clr(v.avg_pnl)}">${fmt$(v.avg_pnl)}</td>
+          <td class="positive">${fmt$(v.best_trade)}</td>
+          <td class="negative">${fmt$(v.worst_trade)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`
   }
 
-  function renderTradeTable(trades) {
-    const tbody = el('bt-trades-tbody');
-    if (!tbody) return;
-    if (!trades.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No completed trades in this period</td></tr>';
-      return;
+  function renderMonteCarlo(mc, curve) {
+    const box = el('mc-tables')
+    if (!mc || !mc.enabled) {
+      box.innerHTML = '<p style="color:var(--muted);padding:20px;">Need at least 5 data points to run Monte Carlo.</p>'
+      return
     }
-    tbody.innerHTML = trades
-      .filter(t => t.action === 'SELL')
-      .reverse()
-      .map(t => {
-        const pnlClass = colorClass(t.pnl);
-        const badge    = '<span class="badge badge-sell">SELL</span>';
-        return `
-          <tr>
-            <td>${t.date}</td>
-            <td><strong>${t.ticker}</strong></td>
-            <td>${badge}</td>
-            <td>${fmt$(t.price)}</td>
-            <td>${t.shares}</td>
-            <td class="${pnlClass}">${fmt$(t.pnl)}</td>
-            <td class="${pnlClass}">${fmtPct(t.pnl_pct)}</td>
-          </tr>`;
-      }).join('');
+    const fc = mc.fan_chart
+    const actualValues = curve ? curve.map(p => p.value) : []
+
+    mcChart = new Chart(el('mc-chart').getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: fc.dates,
+        datasets: [
+          { label: 'P95',          data: fc.p95, borderColor: 'transparent', backgroundColor: 'rgba(88,166,255,0.04)', fill: '+1', pointRadius: 0 },
+          { label: 'P75',          data: fc.p75, borderColor: 'transparent', backgroundColor: 'rgba(88,166,255,0.08)', fill: '+1', pointRadius: 0 },
+          { label: 'P50 (Median)', data: fc.p50, borderColor: 'rgba(88,166,255,0.5)', borderWidth: 1.5, borderDash: [4, 3], backgroundColor: 'rgba(88,166,255,0.08)', fill: '+1', pointRadius: 0 },
+          { label: 'P25',          data: fc.p25, borderColor: 'transparent', backgroundColor: 'rgba(88,166,255,0.04)', fill: '+1', pointRadius: 0 },
+          { label: 'P5',           data: fc.p5,  borderColor: 'transparent', backgroundColor: 'transparent', fill: false, pointRadius: 0 },
+          {
+            label: 'Actual Strategy',
+            data:  fc.dates.map((d, i) => actualValues[i + 1] ?? null),
+            borderColor: '#3fb950', borderWidth: 2.5, fill: false, pointRadius: 0,
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth: 10, usePointStyle: true, filter: l => !['P95','P75','P25','P5'].includes(l.text) } },
+          tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': ' + fmt$(c.parsed.y) } },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 6, maxRotation: 0 } },
+          y: { grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } },
+        },
+      },
+    })
+
+    const rd = mc.return_distribution
+    const sd = mc.sharpe_distribution
+    box.innerHTML = `
+      <div class="card">
+        <div class="section-header">Return Distribution</div>
+        <table class="data-table"><thead><tr><th>Percentile</th><th>Return</th></tr></thead>
+        <tbody>
+          ${[['P5', rd.p5],['P25', rd.p25],['P50 (Median)', rd.p50],['P75', rd.p75],['P95', rd.p95],['Actual', mc.actual_return_pct]]
+            .map(([k, v]) => `<tr><td>${k}</td><td class="${clr(v)}">${fmtPct(v)}</td></tr>`).join('')}
+        </tbody></table>
+        <p style="margin-top:12px;font-size:12px;color:var(--muted);">
+          Actual ranks in the <strong style="color:var(--text);">${fmtN(mc.actual_percentile, 0)}th percentile</strong> of 1,000 paths.
+        </p>
+      </div>
+      <div class="card">
+        <div class="section-header">Sharpe Distribution</div>
+        <table class="data-table"><thead><tr><th>Percentile</th><th>Sharpe</th></tr></thead>
+        <tbody>
+          ${[['P5', sd.p5],['P25', sd.p25],['P50 (Median)', sd.p50],['P75', sd.p75],['P95', sd.p95]]
+            .map(([k, v]) => `<tr><td>${k}</td><td>${fmtN(v)}</td></tr>`).join('')}
+        </tbody></table>
+        <p style="margin-top:12px;font-size:12px;color:var(--muted);">
+          Sharpe ranks in the <strong style="color:var(--text);">${fmtN(mc.sharpe_percentile, 0)}th percentile</strong>.
+        </p>
+      </div>`
+  }
+
+  function renderResearchTab(data) {
+    const mc  = data.monte_carlo      || {}
+    const dsr = data.deflated_sharpe  || {}
+    const ff3 = data.fama_french      || {}
+
+    const mcPct    = mc.actual_percentile ?? 0
+    const test1    = mcPct > 75
+    const test2    = dsr.is_significant ?? false
+    const test3    = ff3.enabled && Math.abs(ff3.alpha_t_stat || 0) > 2.0
+
+    const passes   = [test1, test2, test3].filter(Boolean).length
+    let vClass, vText
+    if (passes === 3) { vClass = 'verdict-significant';  vText = '✓  STATISTICALLY SIGNIFICANT' }
+    else if (passes >= 1) { vClass = 'verdict-promising'; vText = '~  PROMISING — NEEDS MORE DATA' }
+    else               { vClass = 'verdict-inconclusive'; vText = '✗  INCONCLUSIVE — MAY BE NOISE' }
+
+    const testRow = (pass, html) => `
+      <div class="verdict-test ${pass ? 'pass' : 'fail'}">
+        <span class="test-icon">${pass ? '✓' : '✗'}</span>
+        <span class="test-label">${html}</span>
+      </div>`
+
+    el('validation-report').innerHTML = `
+      <div class="verdict-card ${vClass}">
+        <div class="verdict-label">Strategy Validation Report</div>
+        <div class="verdict-main">${vText}</div>
+        <div class="verdict-tests">
+          ${testRow(test1, `Monte Carlo: actual result ranked in the <strong>${fmtN(mcPct, 0)}th percentile</strong> of 1,000 resampled market paths`)}
+          ${testRow(test2, `Deflated Sharpe: <strong>${dsr.dsr != null ? (dsr.dsr * 100).toFixed(1) + '% confidence' : 'n/a'}</strong> result is real — corrected for ${dsr.n_strategies || 5} strategies (DSR&nbsp;=&nbsp;${dsr.dsr != null ? fmtN(dsr.dsr, 3) : 'n/a'})`)}
+          ${testRow(test3, ff3.enabled
+            ? `Fama-French: annual alpha <strong class="${clr(ff3.alpha_annual)}">${fmtPct(ff3.alpha_annual, 2)}/yr</strong> — ${Math.abs(ff3.alpha_t_stat || 0) > 2 ? 'statistically significant' : 'not significant'} (|t|&nbsp;=&nbsp;${fmtN(Math.abs(ff3.alpha_t_stat || 0), 2)})`
+            : 'Fama-French: factor data unavailable — connect to the internet and re-run')}
+        </div>
+      </div>`
+
+    const psrPct = dsr.psr != null ? +(dsr.psr * 100).toFixed(1) : null
+    const dsrPct = dsr.dsr != null ? +(dsr.dsr * 100).toFixed(1) : null
+    const barColor = v => v >= 95 ? 'green' : v >= 70 ? 'yellow' : 'red'
+    const bar = (label, pct) => pct == null ? '' : `
+      <div class="psr-bar-wrap">
+        <div class="psr-bar-label"><span>${label}</span><span>${pct}%</span></div>
+        <div class="psr-bar-track"><div class="psr-bar-fill ${barColor(pct)}" style="width:${pct}%"></div></div>
+      </div>`
+
+    el('research-detail-grid').innerHTML = `
+      <div class="card">
+        <div class="section-header">Deflated Sharpe Ratio</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.6;">
+          PSR corrects the Sharpe ratio for <strong>fat tails and skewness</strong>.
+          DSR additionally corrects for <strong>multiple testing</strong> — if you tried N strategies and picked the best, the bar is higher.
+          Both are expressed as the probability the result is genuinely positive (not luck).
+        </p>
+        ${psrPct != null ? bar('PSR — P(SR > 0)', psrPct) + bar(`DSR — P(SR > benchmark | ${dsr.n_strategies || 5} strategies)`, dsrPct) : '<p style="color:var(--muted);font-size:13px;">Insufficient data.</p>'}
+        ${psrPct != null ? `
+          <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);">
+            Annualised SR: <strong style="color:var(--text);">${fmtN(dsr.sr_annual)}</strong>
+            &nbsp;·&nbsp; SR* benchmark: <strong style="color:var(--text);">${fmtN(dsr.sr_benchmark)}</strong>
+          </div>` : ''}
+      </div>
+      <div class="card">
+        <div class="section-header">Fama-French 3-Factor Attribution</div>
+        ${ff3.enabled ? `
+          <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6;">
+            Decomposes returns into known <strong>market</strong>, <strong>size (SMB)</strong>, and <strong>value (HML)</strong> risk premia.
+            Alpha is what remains — skill that a passive factor ETF cannot replicate.
+          </p>
+          <div style="margin-bottom:14px;">
+            <div style="font-size:26px;font-family:var(--font-mono);font-weight:700;color:${ff3.alpha_annual >= 0 ? 'var(--green)' : 'var(--red)'};">
+              ${fmtPct(ff3.alpha_annual, 2)}/yr
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px;">
+              Jensen's Alpha &nbsp;·&nbsp;
+              ${Math.abs(ff3.alpha_t_stat || 0) > 2 ? '<span style="color:var(--green);">✓ significant</span>' : '<span style="color:var(--muted);">✗ not significant</span>'}
+              &nbsp;(|t|=${fmtN(Math.abs(ff3.alpha_t_stat || 0), 2)})
+              &nbsp;·&nbsp; R²=${fmtN(ff3.r_squared, 3)}
+            </div>
+          </div>
+          <canvas id="ff3-chart" style="max-height:130px;"></canvas>
+          <p style="font-size:11px;color:var(--muted);margin-top:12px;line-height:1.6;">${ff3.interpretation || ''}</p>
+        ` : '<p style="color:var(--muted);font-size:13px;">Factor data unavailable — requires internet access to download from Ken French\'s data library.</p>'}
+      </div>`
+
+    if (ff3.enabled) {
+      const ctx = el('ff3-chart')
+      if (ctx) {
+        ff3Chart = new Chart(ctx.getContext('2d'), {
+          type: 'bar',
+          data: {
+            labels: ['β Market', 'β SMB (Size)', 'β HML (Value)'],
+            datasets: [{
+              data:            [ff3.beta_market, ff3.beta_smb, ff3.beta_hml],
+              backgroundColor: ['rgba(88,166,255,0.55)', 'rgba(210,168,255,0.55)', 'rgba(227,179,65,0.55)'],
+              borderColor:     ['#58a6ff', '#d2a8ff', '#e3b341'],
+              borderWidth:     1, borderRadius: 4,
+            }],
+          },
+          options: {
+            indexAxis: 'y', responsive: true,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' β = ' + fmtN(c.parsed.x, 4) } } },
+            scales: {
+              x: { grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => v.toFixed(2) } },
+              y: { grid: { display: false } },
+            },
+          },
+        })
+      }
+    }
+
+    const mw = data.markowitz_weights
+    if (mw && Object.keys(mw).length) {
+      el('markowitz-section').innerHTML = `
+        <div class="card" style="margin-top:16px;">
+          <div class="section-header">Markowitz Position Sizing Used</div>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:16px;">
+            Position sizes were capped by the mean-variance optimal allocation — allocating more capital to assets with the best risk/return profile.
+          </p>
+          ${weightBars(mw)}
+        </div>`
+    } else {
+      el('markowitz-section').innerHTML = ''
+    }
+  }
+
+  function renderTradesTable(trades) {
+    const tbody = el('trades-tbody')
+    const sells = trades.filter(t => t.action === 'SELL')
+    if (!sells.length) {
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px;">No closed trades in this period</td></tr>`
+      return
+    }
+    tbody.innerHTML = sells.slice(0, 200).map(t => `
+      <tr>
+        <td>${t.date || ''}</td>
+        <td><strong>${t.ticker}</strong></td>
+        <td><span class="badge badge-sell">SELL</span></td>
+        <td>${fmt$(t.price)}</td>
+        <td>${t.shares}</td>
+        <td class="${clr(t.pnl)}">${fmt$(t.pnl)}</td>
+        <td class="${clr(t.pnl_pct)}">${fmtPct(t.pnl_pct)}</td>
+        <td style="color:var(--muted);font-size:11px;">${t.reason || '—'}</td>
+        <td style="color:${REGIME_COLORS[t.regime] || 'var(--muted)'};font-size:11px;">${t.regime || '—'}</td>
+      </tr>`).join('')
   }
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+//  PORTFOLIO OPTIMIZER
+// ════════════════════════════════════════════════════════════════════════════
+function initPortfolio() {
+  let frontierChart = null
+
+  el('opt-start').value = daysAgo(365)
+  el('opt-end').value   = today()
+
+  el('opt-tickers').querySelectorAll('.ticker-chip').forEach(chip => {
+    chip.addEventListener('click', () => chip.classList.toggle('selected'))
+  })
+
+  el('opt-run-btn').addEventListener('click', runOptimization)
+
+  async function runOptimization() {
+    const tickers = [...el('opt-tickers').querySelectorAll('.ticker-chip.selected')]
+      .map(c => c.dataset.ticker)
+    if (tickers.length < 2) { alert('Select at least 2 tickers.'); return }
+
+    el('opt-run-btn').disabled = true
+    el('opt-error').hidden     = true
+    el('opt-results').hidden   = true
+    el('opt-loading').hidden   = false
+
+    const data = await api('/api/portfolio/optimize', {
+      method: 'POST',
+      body: JSON.stringify({
+        tickers,
+        start_date: el('opt-start').value,
+        end_date:   el('opt-end').value,
+        n_points:   60,
+      }),
+    })
+
+    el('opt-loading').hidden   = true
+    el('opt-run-btn').disabled = false
+
+    if (!data || data.error) {
+      el('opt-error').textContent = data?.error || 'Optimization failed — check backend logs'
+      el('opt-error').hidden = false
+      return
+    }
+
+    frontierChart = destroyChart(frontierChart)
+    renderFrontierChart(data)
+    renderWeights(data)
+    renderCorrMatrix(data)
+    el('opt-results').hidden = false
+  }
+
+  function renderFrontierChart(data) {
+    const frontier = data.efficient_frontier || []
+    const ms       = data.max_sharpe
+    const mv       = data.min_variance
+    const assets   = data.individual_assets  || {}
+
+    frontierChart = new Chart(el('frontier-chart').getContext('2d'), {
+      type: 'scatter',
+      data: {
+        datasets: [
+          {
+            label: 'Efficient Frontier',
+            data:  frontier.map(p => ({ x: p.volatility, y: p.return })),
+            borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.12)',
+            showLine: true, tension: 0.3, pointRadius: 2.5, borderWidth: 2,
+          },
+          {
+            label: '★ Max-Sharpe',
+            data:  [{ x: ms.volatility, y: ms.expected_return }],
+            borderColor: '#e3b341', backgroundColor: '#e3b341',
+            pointRadius: 10, pointStyle: 'star', pointHoverRadius: 13,
+          },
+          {
+            label: '◆ Min-Variance',
+            data:  [{ x: mv.volatility, y: mv.expected_return }],
+            borderColor: '#e6edf3', backgroundColor: '#e6edf3',
+            pointRadius: 7, pointStyle: 'rectRot', pointHoverRadius: 9,
+          },
+          {
+            label: 'Individual Assets',
+            data:  Object.entries(assets).map(([t, a]) => ({ x: a.volatility, y: a.expected_return, label: t })),
+            borderColor: '#8b949e', backgroundColor: 'rgba(139,148,158,0.5)',
+            pointRadius: 5, pointHoverRadius: 7,
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth: 12, usePointStyle: true } },
+          tooltip: { callbacks: { label: c => {
+            const d = c.raw
+            const name = d.label || c.dataset.label
+            return ` ${name}: Vol ${fmtN(d.x, 1)}%  Ret ${fmtPct(d.y, 1)}`
+          }}},
+        },
+        scales: {
+          x: { title: { display: true, text: 'Annualised Volatility (%)', color: '#8b949e' }, grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => v.toFixed(1) + '%' } },
+          y: { title: { display: true, text: 'Annualised Return (%)',    color: '#8b949e' }, grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => v.toFixed(1) + '%' } },
+        },
+      },
+    })
+  }
+
+  function renderWeights(data) {
+    const ms = data.max_sharpe
+    const mv = data.min_variance
+
+    const statRows = port => `
+      <div class="opt-stat-row"><span class="opt-stat-label">Expected Return</span><span class="opt-stat-value ${clr(port.expected_return)}">${fmtPct(port.expected_return, 1)}</span></div>
+      <div class="opt-stat-row"><span class="opt-stat-label">Annualised Volatility</span><span class="opt-stat-value">${fmtPct(port.volatility, 1)}</span></div>
+      <div class="opt-stat-row"><span class="opt-stat-label">Sharpe Ratio</span><span class="opt-stat-value ${clr(port.sharpe_ratio)}">${fmtN(port.sharpe_ratio, 3)}</span></div>`
+
+    el('max-sharpe-stats').innerHTML  = statRows(ms)
+    el('max-sharpe-weights').innerHTML = weightBars(ms.weights)
+    el('min-var-stats').innerHTML      = statRows(mv)
+    el('min-var-weights').innerHTML    = weightBars(mv.weights)
+  }
+
+  function renderCorrMatrix(data) {
+    const cov     = data.covariance_matrix
+    const tickers = cov.tickers
+    const covData = cov.data
+    const stds    = tickers.map((_, i) => Math.sqrt(Math.max(covData[i][i], 0)))
+    const corr    = tickers.map((_, i) =>
+      tickers.map((_, j) =>
+        stds[i] * stds[j] > 1e-12 ? covData[i][j] / (stds[i] * stds[j]) : (i === j ? 1 : 0)
+      )
+    )
+
+    const cellColor = v => v >= 0
+      ? `rgba(63,185,80,${0.08 + Math.abs(v) * 0.65})`
+      : `rgba(248,81,73,${0.08 + Math.abs(v) * 0.65})`
+
+    const textColor = v => Math.abs(v) > 0.45 ? 'var(--text)' : 'var(--muted)'
+
+    el('corr-matrix').innerHTML = `
+      <div class="table-wrap"><table class="corr-table">
+        <thead><tr><th></th>${tickers.map(t => `<th>${t}</th>`).join('')}</tr></thead>
+        <tbody>${tickers.map((t, i) => `
+          <tr><th>${t}</th>${corr[i].map((v, j) => `
+            <td style="background:${cellColor(v)};color:${textColor(v)};">
+              ${i === j ? '—' : v.toFixed(2)}
+            </td>`).join('')}
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`
+  }
+}
+
+// ── Router ──────────────────────────────────────────────────────────────────
+const PAGE = document.body.dataset.page
+if (PAGE === 'dashboard') initDashboard()
+if (PAGE === 'backtest')  initBacktest()
+if (PAGE === 'portfolio') initPortfolio()

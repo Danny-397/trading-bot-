@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TradeBot — Backtest</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap">
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -14,295 +15,214 @@
   <!-- ── Navigation ─────────────────────────────────────────────────────── -->
   <nav class="navbar">
     <div class="nav-brand">
-      <span class="icon">◈</span>
-      <span>TRADEBOT</span>
+      <span class="nav-brand-name">TradeBot</span>
+      <span class="nav-brand-sub">Research Platform</span>
     </div>
     <div class="nav-links">
-      <a href="index.html"    class="nav-link">Dashboard</a>
-      <a href="backtest.html" class="nav-link active">Backtest</a>
-      <a href="about.html"    class="nav-link">About</a>
+      <a href="index.html"     class="nav-link">Dashboard</a>
+      <a href="backtest.html"  class="nav-link active">Backtest</a>
+      <a href="portfolio.html" class="nav-link">Portfolio</a>
     </div>
+    <span class="nav-badge">PAPER TRADING</span>
   </nav>
 
-  <!-- ── Backtest form ──────────────────────────────────────────────────── -->
-  <div class="bt-form container" style="margin-top: 16px;">
-    <h2>BACKTESTING ENGINE</h2>
+  <!-- ── Main ───────────────────────────────────────────────────────────── -->
+  <main class="page-wrap" data-page="backtest">
+    <div class="sidebar-layout">
 
-    <div class="form-grid">
+      <!-- ── LEFT: Sticky form panel ─────────────────────────────────────── -->
+      <aside class="form-panel">
+        <h2>Configure Backtest</h2>
 
-      <div class="form-field">
-        <label>STRATEGY</label>
-        <select class="select" id="bt-strategy">
-          <option value="adaptive">◈ Adaptive (Regime-Driven)</option>
-          <option value="ma_crossover">Moving Average Crossover (SMA 20/50)</option>
-          <option value="rsi">RSI Mean Reversion (14-period)</option>
-          <option value="macd">MACD Momentum (12/26/9)</option>
-          <option value="ml" disabled>ML Model (Coming Soon)</option>
-        </select>
-      </div>
-
-      <div class="form-field">
-        <label>START DATE</label>
-        <input class="input" type="date" id="bt-start">
-      </div>
-
-      <div class="form-field">
-        <label>END DATE</label>
-        <input class="input" type="date" id="bt-end">
-      </div>
-
-      <div class="form-field">
-        <label>STARTING CAPITAL ($)</label>
-        <input class="input" type="number" id="bt-capital" value="100000" min="1000" max="10000000" step="1000">
-      </div>
-
-      <div class="form-field">
-        <label>COMMISSION (% per side)</label>
-        <input class="input" type="number" id="bt-commission" value="0.10" min="0" max="5" step="0.01">
-      </div>
-
-      <div class="form-field">
-        <label>SLIPPAGE (% per side)</label>
-        <input class="input" type="number" id="bt-slippage" value="0.05" min="0" max="5" step="0.01">
-      </div>
-
-    </div>
-
-    <!-- Ticker selection -->
-    <div class="form-field" style="margin-bottom: 20px;">
-      <label style="display:block; margin-bottom: 8px;">SELECT TICKERS (click to toggle)</label>
-      <div class="ticker-grid">
-        <div class="ticker-chip selected" data-ticker="AAPL">AAPL</div>
-        <div class="ticker-chip selected" data-ticker="MSFT">MSFT</div>
-        <div class="ticker-chip selected" data-ticker="NVDA">NVDA</div>
-        <div class="ticker-chip selected" data-ticker="GOOGL">GOOGL</div>
-        <div class="ticker-chip selected" data-ticker="TSLA">TSLA</div>
-        <div class="ticker-chip selected" data-ticker="JPM">JPM</div>
-        <div class="ticker-chip selected" data-ticker="SPY">SPY</div>
-      </div>
-    </div>
-
-    <!-- Risk tolerance for backtest -->
-    <div class="form-field" style="margin-bottom: 20px;">
-      <label style="display:block; margin-bottom: 8px;">RISK TOLERANCE</label>
-      <div style="display: flex; gap: 16px;">
-        <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:11px; color:var(--text-muted);">
-          <input type="radio" name="bt-risk" value="conservative"> CONSERVATIVE
-        </label>
-        <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:11px; color:var(--text-muted);">
-          <input type="radio" name="bt-risk" value="moderate" checked> MODERATE
-        </label>
-        <label style="display:flex; align-items:center; gap:5px; cursor:pointer; font-size:11px; color:var(--text-muted);">
-          <input type="radio" name="bt-risk" value="aggressive"> AGGRESSIVE
-        </label>
-      </div>
-    </div>
-
-    <!-- Walk-forward toggle -->
-    <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 10px;">
-      <label class="toggle-wrap" for="bt-walkforward">
-        <input type="checkbox" id="bt-walkforward">
-        <span class="toggle-label">WALK-FORWARD TEST</span>
-      </label>
-      <span style="color: var(--text-muted); font-size: 11px;">
-        Trains on first 70% of range, evaluates only on final 30% (out-of-sample)
-      </span>
-    </div>
-
-    <button class="btn btn-primary" id="bt-run" style="padding: 10px 28px; font-size: 12px; letter-spacing: 1.5px;">
-      RUN BACKTEST
-    </button>
-    <span style="color: var(--text-muted); font-size: 11px; margin-left: 12px;">
-      Downloads historical data then simulates the strategy day-by-day
-    </span>
-  </div>
-
-  <!-- ── Results (hidden until backtest runs) ───────────────────────────── -->
-  <div class="bt-results" id="bt-results">
-
-    <!-- Walk-forward info banner (shown only when walk-forward is on) -->
-    <div class="wf-banner" id="wf-banner" style="display:none;">
-      <strong>WALK-FORWARD MODE</strong> — metrics below cover only the out-of-sample test period
-      starting <span id="wf-split-date">—</span>. The prior 70% of the date range was used for
-      indicator warm-up only.
-    </div>
-
-    <!-- Metrics grid -->
-    <div class="metrics-grid">
-
-      <div class="metric-card highlight">
-        <div class="metric-label">TOTAL RETURN</div>
-        <div class="metric-value" id="r-return">—</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">FINAL VALUE</div>
-        <div class="metric-value" id="r-final">—</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">WIN RATE</div>
-        <div class="metric-value" id="r-winrate">—</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">TOTAL TRADES</div>
-        <div class="metric-value" id="r-trades">—</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">MAX DRAWDOWN</div>
-        <div class="metric-value" id="r-drawdown">—</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">SHARPE RATIO</div>
-        <div class="metric-value" id="r-sharpe">—</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">AVG WIN</div>
-        <div class="metric-value" id="r-avgwin">—</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">AVG LOSS</div>
-        <div class="metric-value" id="r-avgloss">—</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">BEST TRADE</div>
-        <div class="metric-value" id="r-best">—</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">WORST TRADE</div>
-        <div class="metric-value" id="r-worst">—</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">SPY BUY &amp; HOLD</div>
-        <div class="metric-value" id="r-benchmark">—</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">CALMAR RATIO</div>
-        <div class="metric-value" id="r-calmar">—</div>
-      </div>
-
-      <div class="metric-card highlight-kelly">
-        <div class="metric-label">KELLY FRACTION</div>
-        <div class="metric-value" id="r-kelly">—</div>
-        <div class="metric-sub">Optimal position size</div>
-      </div>
-
-      <div class="metric-card">
-        <div class="metric-label">GROSS RETURN</div>
-        <div class="metric-value" id="r-gross">—</div>
-        <div class="metric-sub" id="r-costs-sub">Pre transaction costs</div>
-      </div>
-
-    </div>
-
-    <!-- Equity curve chart -->
-    <div class="panel" style="margin-bottom: 12px;">
-      <div class="panel-header">
-        <span class="panel-title">EQUITY CURVE vs SPY BENCHMARK</span>
-      </div>
-      <div class="chart-wrap" style="height: 320px;">
-        <canvas id="bt-chart"></canvas>
-      </div>
-    </div>
-
-    <!-- Monte Carlo validation -->
-    <div class="panel mc-panel" id="mc-panel" style="margin-bottom: 12px; display:none;">
-      <div class="panel-header">
-        <span class="panel-title">MONTE CARLO VALIDATION — 1,000 RANDOM PATHS</span>
-        <span class="mc-rank-badge" id="mc-rank-badge">—</span>
-      </div>
-      <div class="mc-body">
-
-        <!-- Headline stat -->
-        <div class="mc-headline" id="mc-headline">
-          Running simulation…
+        <!-- Strategy -->
+        <div class="form-group">
+          <label class="form-label">Strategy</label>
+          <select id="bt-strategy">
+            <option value="adaptive">Adaptive (Regime-Based)</option>
+            <option value="ma_crossover">MA Crossover (SMA 20/50)</option>
+            <option value="rsi">RSI Mean Reversion (14-period)</option>
+            <option value="macd">MACD Momentum (12/26/9)</option>
+            <option value="ml" disabled>ML (Stub)</option>
+          </select>
         </div>
 
-        <!-- Fan chart -->
-        <div class="chart-wrap" style="height: 300px; margin: 0 0 16px;">
-          <canvas id="mc-chart"></canvas>
-        </div>
-
-        <!-- Distribution table -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-          <div>
-            <div class="mc-dist-title">RETURN DISTRIBUTION</div>
-            <table class="data-table" style="font-size:11px;">
-              <thead><tr><th>PERCENTILE</th><th>RETURN</th></tr></thead>
-              <tbody id="mc-return-tbody"></tbody>
-            </table>
-          </div>
-          <div>
-            <div class="mc-dist-title">SHARPE DISTRIBUTION</div>
-            <table class="data-table" style="font-size:11px;">
-              <thead><tr><th>PERCENTILE</th><th>SHARPE</th></tr></thead>
-              <tbody id="mc-sharpe-tbody"></tbody>
-            </table>
+        <!-- Tickers -->
+        <div class="form-group">
+          <label class="form-label">Tickers (click to toggle)</label>
+          <div class="chip-grid" id="bt-tickers">
+            <div class="ticker-chip selected" data-ticker="AAPL">AAPL</div>
+            <div class="ticker-chip selected" data-ticker="MSFT">MSFT</div>
+            <div class="ticker-chip selected" data-ticker="NVDA">NVDA</div>
+            <div class="ticker-chip selected" data-ticker="GOOGL">GOOGL</div>
+            <div class="ticker-chip selected" data-ticker="TSLA">TSLA</div>
+            <div class="ticker-chip selected" data-ticker="JPM">JPM</div>
+            <div class="ticker-chip selected" data-ticker="SPY">SPY</div>
           </div>
         </div>
 
-      </div>
-    </div>
+        <!-- Date range -->
+        <div class="form-group">
+          <label class="form-label">Start Date</label>
+          <input type="date" id="bt-start">
+        </div>
+        <div class="form-group">
+          <label class="form-label">End Date</label>
+          <input type="date" id="bt-end">
+        </div>
 
-    <!-- Regime breakdown -->
-    <div class="panel" id="regime-breakdown-panel" style="margin-bottom: 12px; display:none;">
-      <div class="panel-header">
-        <span class="panel-title">PERFORMANCE BY REGIME</span>
-      </div>
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>REGIME</th>
-              <th>TRADES</th>
-              <th>WIN RATE</th>
-              <th>TOTAL P&amp;L ($)</th>
-              <th>AVG P&amp;L ($)</th>
-              <th>BEST ($)</th>
-              <th>WORST ($)</th>
-            </tr>
-          </thead>
-          <tbody id="regime-breakdown-tbody">
-          </tbody>
-        </table>
-      </div>
-    </div>
+        <!-- Capital -->
+        <div class="form-group">
+          <label class="form-label">Initial Capital ($)</label>
+          <input type="number" id="bt-capital" value="100000" min="1000" max="10000000" step="1000">
+        </div>
 
-    <!-- Trade history -->
-    <div class="panel" style="margin-bottom: 24px;">
-      <div class="panel-header">
-        <span class="panel-title">TRADE HISTORY (last 200 closed trades)</span>
-      </div>
-      <div class="table-wrap" style="max-height: 400px; overflow-y: auto;">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>DATE</th>
-              <th>TICKER</th>
-              <th>ACTION</th>
-              <th>PRICE</th>
-              <th>SHARES</th>
-              <th>P&amp;L ($)</th>
-              <th>P&amp;L %</th>
-            </tr>
-          </thead>
-          <tbody id="bt-trades-tbody">
-            <tr><td colspan="7" class="empty-state">Run a backtest to see trade history</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+        <!-- Risk tolerance -->
+        <div class="form-group">
+          <label class="form-label">Risk Tolerance</label>
+          <div class="risk-btn-group" id="bt-risk-btns">
+            <button class="risk-btn" data-risk="conservative">Conservative</button>
+            <button class="risk-btn active" data-risk="moderate">Moderate</button>
+            <button class="risk-btn" data-risk="aggressive">Aggressive</button>
+          </div>
+        </div>
 
-  </div>
+        <!-- Walk-forward -->
+        <div class="form-group">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="bt-walkforward" style="width:14px;height:14px;accent-color:var(--blue);cursor:pointer;">
+            <span style="font-size:12px;font-weight:600;color:var(--blue);">Walk-Forward Test</span>
+          </label>
+          <p style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5;">
+            Trains on first 70%, evaluates only on final 30% (out-of-sample).
+          </p>
+        </div>
+
+        <!-- Advanced -->
+        <details class="collapsible" id="bt-advanced">
+          <summary>Advanced Options</summary>
+          <div class="collapsible-body">
+            <div class="form-group">
+              <label class="form-label">Commission % (per side)</label>
+              <input type="number" id="bt-commission" value="0.10" min="0" max="5" step="0.01">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Slippage % (per side)</label>
+              <input type="number" id="bt-slippage" value="0.05" min="0" max="5" step="0.01">
+            </div>
+            <div class="form-group">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="bt-markowitz" style="width:14px;height:14px;accent-color:var(--blue);cursor:pointer;">
+                <span style="font-size:12px;font-weight:600;color:var(--blue);">Use Markowitz Weights</span>
+              </label>
+              <p style="font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5;">
+                Size positions using mean-variance optimized weights.
+              </p>
+            </div>
+          </div>
+        </details>
+
+        <button class="btn btn-primary" id="run-btn" style="width:100%;margin-top:20px;padding:10px 18px;">
+          Run Backtest
+        </button>
+        <p style="font-size:11px;color:var(--muted);margin-top:8px;text-align:center;line-height:1.5;">
+          Downloads historical data then simulates the strategy day-by-day
+        </p>
+      </aside>
+
+      <!-- ── RIGHT: Results area ─────────────────────────────────────────── -->
+      <div class="results-area">
+
+        <!-- Empty state -->
+        <div id="empty-state">
+          <div class="empty-state">
+            <div class="empty-state-icon">⚗</div>
+            <strong>Configure and run a backtest to see results.</strong>
+            <p style="max-width:360px;">Select a strategy, tickers, and date range, then click <strong>Run Backtest</strong>. The Research tab includes statistical validation with Deflated Sharpe Ratio and Fama-French factor analysis.</p>
+          </div>
+        </div>
+
+        <!-- Loading state -->
+        <div id="loading-state" hidden>
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <strong>Running backtest…</strong>
+            <p>Fetching historical data and simulating trades day-by-day.</p>
+          </div>
+        </div>
+
+        <!-- Results container -->
+        <div id="results-container" hidden>
+
+          <!-- Walk-forward banner -->
+          <div class="wf-banner" id="wf-banner" hidden>
+            <strong>WALK-FORWARD MODE</strong> — metrics cover only the out-of-sample test period
+            starting <span id="wf-split-date">—</span>. The prior 70% was used for indicator warm-up only.
+          </div>
+
+          <!-- Summary hero stats -->
+          <div class="stats-grid" id="summary-stats" style="margin-bottom:20px;"></div>
+
+          <!-- Tab card -->
+          <div class="card">
+            <div class="tab-list">
+              <button class="tab-btn active" data-tab="perf-tab">Performance</button>
+              <button class="tab-btn" data-tab="mc-tab">Monte Carlo</button>
+              <button class="tab-btn" data-tab="research-tab">⚗ Research</button>
+              <button class="tab-btn" data-tab="trades-tab">Trades</button>
+            </div>
+
+            <!-- Performance tab -->
+            <div class="tab-panel active" id="perf-tab">
+              <div class="chart-wrap" style="height:320px;margin-bottom:20px;">
+                <canvas id="bt-chart"></canvas>
+              </div>
+              <div class="stats-grid" id="secondary-stats" style="margin-bottom:20px;"></div>
+              <div id="regime-breakdown"></div>
+            </div>
+
+            <!-- Monte Carlo tab -->
+            <div class="tab-panel" id="mc-tab">
+              <div class="chart-wrap" style="height:320px;margin-bottom:20px;">
+                <canvas id="mc-chart"></canvas>
+              </div>
+              <div class="two-col" id="mc-tables"></div>
+            </div>
+
+            <!-- Research tab -->
+            <div class="tab-panel" id="research-tab">
+              <div id="validation-report"></div>
+              <div class="research-grid" id="research-detail-grid"></div>
+              <div id="markowitz-section"></div>
+            </div>
+
+            <!-- Trades tab -->
+            <div class="tab-panel" id="trades-tab">
+              <div class="scroll-box" id="trades-table">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Ticker</th>
+                      <th>Action</th>
+                      <th>Price</th>
+                      <th>Shares</th>
+                      <th>P&amp;L $</th>
+                      <th>P&amp;L %</th>
+                      <th>Reason</th>
+                      <th>Regime</th>
+                    </tr>
+                  </thead>
+                  <tbody id="trades-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+          </div><!-- end tab card -->
+        </div><!-- end #results-container -->
+
+      </div><!-- end .results-area -->
+    </div><!-- end .sidebar-layout -->
+  </main>
 
   <script src="app.js"></script>
 </body>
