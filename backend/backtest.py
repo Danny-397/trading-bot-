@@ -243,7 +243,8 @@ def run_backtest(
                 entry  = pos['entry']
                 reason = None
 
-                if price <= entry * (1 - profile['stop_loss_pct']):
+                pos['high'] = max(pos['high'], price)
+                if price <= pos['high'] * (1 - profile['trail_pct']):
                     reason = 'stop_loss'
                 elif price >= entry * (1 + profile['take_profit_pct']):
                     reason = 'take_profit'
@@ -304,7 +305,8 @@ def run_backtest(
                         positions[ticker] = {
                             'shares':     shares,
                             'entry':      price,
-                            'cost_basis': total_spend,  # used for net P&L
+                            'high':       price,       # trailing stop high watermark
+                            'cost_basis': total_spend,
                         }
                         trades.append({
                             'date':     date.strftime('%Y-%m-%d'),

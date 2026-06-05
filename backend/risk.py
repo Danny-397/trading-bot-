@@ -6,7 +6,8 @@ import pytz
 # and behaviour in high-volatility regimes.
 RISK_PROFILES = {
     'conservative': {
-        'stop_loss_pct':    0.03,   # 3%  — tight stop, small losses
+        'stop_loss_pct':    0.03,   # 3%  — kept for legacy display
+        'trail_pct':        0.03,   # 3%  — trailing distance from peak
         'take_profit_pct':  0.10,   # 10% — take gains early
         'max_position_pct': 0.05,   # 5%  — small positions
         'min_cash_reserve': 0.30,   # 30% — large cash cushion
@@ -15,7 +16,8 @@ RISK_PROFILES = {
         'trade_high_vol':   False,  # sit out HIGH_VOLATILITY regime entirely
     },
     'moderate': {
-        'stop_loss_pct':    0.05,   # 5%
+        'stop_loss_pct':    0.05,   # 5%  — kept for legacy display
+        'trail_pct':        0.05,   # 5%  — trailing distance from peak
         'take_profit_pct':  0.15,   # 15%
         'max_position_pct': 0.10,   # 10%
         'min_cash_reserve': 0.20,   # 20%
@@ -24,7 +26,8 @@ RISK_PROFILES = {
         'trade_high_vol':   True,
     },
     'aggressive': {
-        'stop_loss_pct':    0.07,   # 7%  — wider stop
+        'stop_loss_pct':    0.07,   # 7%  — kept for legacy display
+        'trail_pct':        0.07,   # 7%  — wider trail, lets winners run
         'take_profit_pct':  0.20,   # 20% — let winners run
         'max_position_pct': 0.15,   # 15% — larger bets
         'min_cash_reserve': 0.10,   # 10% — more deployed capital
@@ -137,9 +140,11 @@ def calculate_position_size(portfolio_value: float, price: float, cash: float,
     return max(int(spend / price), 0)
 
 
-def calculate_stop_loss(entry_price: float, profile: dict = None) -> float:
-    pct = (profile or _DEFAULT)['stop_loss_pct']
-    return round(entry_price * (1 - pct), 2)
+def calculate_stop_loss(entry_price: float, profile: dict = None,
+                        high_price: float = None) -> float:
+    p   = profile or _DEFAULT
+    ref = high_price if high_price is not None else entry_price
+    return round(ref * (1 - p['trail_pct']), 2)
 
 
 def calculate_take_profit(entry_price: float, profile: dict = None) -> float:
@@ -148,10 +153,12 @@ def calculate_take_profit(entry_price: float, profile: dict = None) -> float:
 
 
 def check_stop_take(current_price: float, entry_price: float,
-                    profile: dict = None) -> str | None:
+                    profile: dict = None,
+                    high_since_entry: float = None) -> str | None:
     """Returns 'stop_loss', 'take_profit', or None."""
-    p = profile or _DEFAULT
-    if current_price <= entry_price * (1 - p['stop_loss_pct']):
+    p          = profile or _DEFAULT
+    trail_high = high_since_entry if high_since_entry is not None else entry_price
+    if current_price <= trail_high * (1 - p['trail_pct']):
         return 'stop_loss'
     if current_price >= entry_price * (1 + p['take_profit_pct']):
         return 'take_profit'

@@ -33,6 +33,7 @@ logger        = logging.getLogger(__name__)
 _bot_thread   = None
 _stop_event   = threading.Event()
 _activity_log = []
+_position_highs: dict[str, float] = {}  # ticker → highest price seen since entry
 
 # Cache last detected regime so the dashboard can read it between cycles
 _last_regime: reg.RegimeResult | None = None
@@ -123,7 +124,9 @@ def get_portfolio_summary() -> dict:
                 'current_price': round(current, 2),
                 'pnl':           round(pnl,     2),
                 'pnl_pct':       round(pnl_pct * 100, 2),
-                'stop_loss':     risk.calculate_stop_loss(entry,   profile),
+                'stop_loss':     risk.calculate_stop_loss(
+                                     entry, profile,
+                                     high_price=_position_highs.get(pos.symbol, entry)),
                 'take_profit':   risk.calculate_take_profit(entry, profile),
             })
 
@@ -155,6 +158,7 @@ def _buy(client, ticker, shares, price, strategy_name, regime_name, profile):
             side=OrderSide.BUY, time_in_force=TimeInForce.DAY,
         ))
         risk.increment_trade_count()
+        _position_highs[ticker] = price
         database.log_trade(ticker, 'BUY', shares, price, strategy_name,
                            order_id=str(order.id), regime=regime_name)
         _log(f'BUY  {shares:>4} {ticker:<5} @ ${price:>9.2f}  '
@@ -172,6 +176,7 @@ def _sell(client, ticker, shares, price, entry, strategy_name, regime_name, reas
             side=OrderSide.SELL, time_in_force=TimeInForce.DAY,
         ))
         risk.increment_trade_count()
+        _position_highs.pop(ticker, None)
         pnl     = (price - entry) * shares
         pnl_pct = (price - entry) / entry * 100
         database.log_trade(ticker, 'SELL', shares, price, strategy_name,
@@ -235,7 +240,9 @@ def _trading_cycle(configured_strategy: str):
         for ticker, pos in list(positions.items()):
             current = float(pos.current_price) if pos.current_price else float(pos.avg_entry_price)
             entry   = float(pos.avg_entry_price)
-            trigger = risk.check_stop_take(current, entry, profile)
+            _position_highs[ticker] = max(_position_highs.get(ticker, entry), current)
+            trigger = risk.check_stop_take(current, entry, profile,
+                                            high_since_entry=_position_highs[ticker])
             if trigger:
                 _sell(client, ticker, float(pos.qty),
                       current, entry, active_strategy, regime_name, trigger, profile)

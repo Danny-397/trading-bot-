@@ -45,6 +45,26 @@ class TestCheckStopTake:
         assert risk.check_stop_take(105.0, 100.0) is None
         assert risk.check_stop_take(95.01, 100.0) is None
 
+    def test_trailing_stop_triggers_from_high_not_entry(self):
+        # Entry 100, price ran to 120, then dropped 5% from high → fires at 114
+        assert risk.check_stop_take(114.0, 100.0, high_since_entry=120.0) == 'stop_loss'
+
+    def test_trailing_stop_does_not_trigger_above_trail_level(self):
+        # Price rose to 110, current is 106 — only 3.6% below high, within 5% trail
+        assert risk.check_stop_take(106.0, 100.0, high_since_entry=110.0) is None
+
+    def test_trailing_stop_matches_fixed_stop_at_entry(self):
+        # When high equals entry the trailing stop is identical to the old fixed stop
+        assert risk.check_stop_take(95.0, 100.0, high_since_entry=100.0) == 'stop_loss'
+
+    def test_trailing_stop_level_displayed_correctly(self):
+        # calculate_stop_loss should use high_price when provided
+        assert risk.calculate_stop_loss(100.0, high_price=120.0) == round(120.0 * 0.95, 2)
+
+    def test_trailing_stop_level_falls_back_to_entry(self):
+        # Without high_price, falls back to entry-based stop
+        assert risk.calculate_stop_loss(100.0) == 95.0
+
 
 class TestPositionSizing:
     def test_respects_max_position_pct(self):
