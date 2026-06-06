@@ -18,6 +18,7 @@ import features  # noqa: F401 — imported so startup errors surface early
 import portfolio as portopt
 import regime as reg
 import risk
+import simulator
 import strategies
 
 load_dotenv()
@@ -29,16 +30,6 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# ── Startup validation ────────────────────────────────────────────────────────
-_missing = [k for k in ('ALPACA_API_KEY', 'ALPACA_SECRET_KEY')
-            if not os.getenv(k, '').strip()]
-if _missing:
-    logger.warning(
-        'Missing environment variables: %s — '
-        'the bot will not be able to connect to Alpaca until these are set.',
-        ', '.join(_missing)
-    )
-
 app = Flask(__name__)
 
 # CORS: in production, replace the origins list with your Vercel URL to lock
@@ -48,6 +39,7 @@ app = Flask(__name__)
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
 CORS(app, origins=_cors_origins)
 database.init_db()
+simulator.init_simulator()
 
 VALID_STRATEGIES = strategies.VALID_STRATEGIES + ('adaptive',)
 

@@ -14,13 +14,9 @@ services:
     # gunicorn.conf.py is auto-discovered — sets workers=1, timeout=120,
     # threads=4, and binds to $PORT.
 
+    # No brokerage API keys needed — the bot uses an internal paper-trading
+    # simulator that fills orders at real yfinance prices.
     envVars:
-      - key: ALPACA_API_KEY
-        sync: false          # set manually in Render dashboard
-
-      - key: ALPACA_SECRET_KEY
-        sync: false          # set manually in Render dashboard
-
       - key: DATABASE_PATH
         value: /data/tradebot.db   # persistent disk path
 

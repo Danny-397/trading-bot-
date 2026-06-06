@@ -2,7 +2,7 @@
 #
 # CRITICAL — workers must be 1.
 # The trading bot runs in a background thread inside the Flask process.
-# Multiple workers = multiple bot instances trading the same Alpaca account
+# Multiple workers = multiple bot instances trading the same simulated account
 # simultaneously, which will cause duplicate orders.
 #
 # Render start command: gunicorn app:app

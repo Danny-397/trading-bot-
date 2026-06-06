@@ -1,7 +1,7 @@
 """
 Unit tests for risk.py.
 
-All tests are pure Python — no network, no Alpaca, no database.
+All tests are pure Python — no network, no simulator, no database.
 """
 
 import sys

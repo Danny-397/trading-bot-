@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=flat&logo=flask)](https://flask.palletsprojects.com)
-[![Alpaca](https://img.shields.io/badge/Alpaca-Paper_Trading_Only-FFCD00?style=flat)](https://alpaca.markets)
+[![Paper Trading](https://img.shields.io/badge/Paper_Trading-Simulated-FFCD00?style=flat)](#)
 [![SciPy](https://img.shields.io/badge/SciPy-1.13-8CAAE6?style=flat&logo=scipy)](https://scipy.org)
 
 > **Live demo:** `[Add Render URL after deployment]`
@@ -16,8 +16,8 @@
 ## ⚠️ Disclaimer — Paper Trading Only
 
 > This project is for **educational purposes only.**
-> TradeBot connects exclusively to Alpaca's **paper-trading sandbox** (simulated market, fake money, zero financial risk).
-> **No real money is ever placed at risk. This bot never trades real money.**
+> TradeBot runs an **internal paper-trading simulator** — orders are filled at real market prices (from yfinance) but with simulated cash. No brokerage account, no API keys, no real money is ever involved.
+> **This bot never trades real money.**
 > Nothing here constitutes financial advice. Past backtesting performance does not guarantee future results.
 
 ---
@@ -124,8 +124,7 @@ Indicators: **ADX** (Wilder's smoothing), **Bollinger Band Width** (consolidatio
 |---|---|---|
 | Python | 3.11+ | Runtime |
 | Flask | 3.0 | REST API |
-| alpaca-py | 0.26 | Alpaca Paper Trading orders |
-| yfinance | 0.2 | Historical OHLCV data |
+| yfinance | 0.2 | Real-time and historical OHLCV data |
 | pandas | 2.2 | Time-series data manipulation |
 | numpy | 1.26 | Indicator maths, matrix operations |
 | scipy | 1.13 | Quadratic programming (Markowitz SLSQP) |
@@ -142,7 +141,7 @@ All indicator maths (SMA, EMA, RSI, MACD, ADX, Bollinger Bands) are implemented 
 - No React, no Vue, no Webpack — open `index.html` in any browser
 
 ### CI/CD
-- GitHub Actions: syntax check (`py_compile`), flake8 lint, pytest (79 tests), DB smoke test with dummy keys
+- GitHub Actions: syntax check (`py_compile`), flake8 lint, pytest (99 tests), DB + simulator smoke test
 - Security audit via pip-audit (non-blocking, runs as separate job)
 
 ---
@@ -153,7 +152,8 @@ All indicator maths (SMA, EMA, RSI, MACD, ADX, Bollinger Bands) are implemented 
 trading-bot-/
 ├── backend/
 │   ├── app.py           Flask REST API — all 13 endpoints
-│   ├── bot.py           Trading loop, Alpaca orders, trailing stop tracking
+│   ├── bot.py           Trading loop, order execution, trailing stop tracking
+│   ├── simulator.py     Internal paper-trading engine (fills at real prices, SQLite state)
 │   ├── strategies.py    Signal generators (MA Crossover, RSI, MACD, ML stub)
 │   ├── backtest.py      Historical simulation — walk-forward, Kelly, costs, regime tagging
 │   ├── features.py      Centralised indicator engineering (SMA, RSI, MACD, ATR, returns)
@@ -163,10 +163,11 @@ trading-bot-/
 │   ├── monte_carlo.py   Bootstrap resampling — 1,000 equity paths, fan chart bands
 │   ├── stats.py         PSR, Deflated Sharpe Ratio, Fama-French 3-factor OLS
 │   ├── database.py      SQLite persistence (WAL mode, Kelly computation, live metrics)
-│   ├── gunicorn.conf.py workers=1 (prevents duplicate Alpaca orders)
+│   ├── gunicorn.conf.py workers=1 (one bot thread — prevents duplicate orders)
 │   ├── requirements.txt
 │   └── tests/
-│       ├── test_risk.py       44 tests — stop/take, trailing stop, sizing, Kelly, risk gates
+│       ├── test_risk.py       26 tests — stop/take, trailing stop, sizing, Kelly, risk gates
+│       ├── test_simulator.py  20 tests — buy/sell fills, cash flow, P&L, position tracking
 │       ├── test_features.py   13 tests — SMA, RSI, MACD correctness on synthetic data
 │       ├── test_portfolio.py  17 tests — Markowitz constraints, frontier math, data layer
 │       └── test_stats.py      23 tests — PSR/DSR math, FF3 CSV parsing, OLS regression
@@ -231,29 +232,20 @@ git clone https://github.com/Danny-397/trading-bot-
 cd trading-bot-
 ```
 
-### 2. Get Alpaca paper trading API keys (free)
-1. Create an account at [alpaca.markets](https://alpaca.markets)
-2. Switch to **Paper Trading** (top-right toggle)
-3. Go to **Overview → API Keys → Generate New Key**
-
-### 3. Configure environment variables
-```bash
-cp .env.example .env
-# Fill in ALPACA_API_KEY and ALPACA_SECRET_KEY
-```
-
-### 4. Install dependencies
+### 2. Install dependencies
 ```bash
 pip install -r backend/requirements.txt
 ```
 
-### 5. Run the backend
+No API keys or brokerage account needed — the internal simulator handles order execution.
+
+### 3. Run the backend
 ```bash
 python backend/app.py
 # → http://localhost:5000
 ```
 
-### 6. Open the frontend
+### 4. Open the frontend
 ```bash
 # Option A: open directly
 open frontend/index.html
@@ -263,21 +255,21 @@ python -m http.server 3000 -d frontend
 # → http://localhost:3000
 ```
 
-### 7. Run the test suite
+### 5. Run the test suite
 ```bash
 cd backend
 pytest tests/ -v
-# 79 tests, all should pass
+# 99 tests, all should pass
 ```
 
 ---
 
 ## Environment Variables
 
+All environment variables are **optional** — the app runs out of the box with no configuration.
+
 | Variable | Required | Description |
 |---|---|---|
-| `ALPACA_API_KEY` | Yes | Alpaca **paper trading** API key |
-| `ALPACA_SECRET_KEY` | Yes | Alpaca **paper trading** secret key |
 | `PORT` | No | Flask port (default: 5000) |
 | `DATABASE_PATH` | No | SQLite path (default: `backend/tradebot.db`). Set to `/data/tradebot.db` on Render for persistence. |
 | `CORS_ORIGINS` | No | Allowed CORS origins (default: `*`). Set to your Vercel URL in production. |
@@ -292,26 +284,26 @@ pytest tests/ -v
 2. New Web Service → connect repo → root directory: `backend/`
 3. Build: `pip install -r requirements.txt`
 4. Start: `gunicorn app:app` (gunicorn.conf.py auto-discovered)
-5. Environment variables:
+5. Environment variables (both optional):
 
 | Variable | Value |
 |---|---|
-| `ALPACA_API_KEY` | Your paper trading key |
-| `ALPACA_SECRET_KEY` | Your paper trading secret |
 | `DATABASE_PATH` | `/data/tradebot.db` |
 | `CORS_ORIGINS` | `https://your-project.vercel.app` |
 
-**Persistent disk**: Add a Render disk mounted at `/data` — otherwise SQLite is wiped on every deploy.
+`render.yaml` in the repo root configures all of this automatically — Render detects it on import.
+
+**Persistent disk**: Add a Render disk mounted at `/data` — otherwise SQLite is wiped on every deploy. (`render.yaml` declares this disk for you.)
 
 ### Frontend → Vercel
 
 1. New Project → root directory: `frontend/`
 2. No build step needed (static files)
-3. Update `API_BASE` in `frontend/app.js` with your Render URL
+3. Set your Render backend URL in `frontend/config.js` (`window.RENDER_URL = '...'`) before deploying
 
 ### Deployment notes
 
-- **`workers = 1` is mandatory.** `gunicorn.conf.py` enforces this. Multiple workers = multiple bot threads = duplicate Alpaca orders on the same account.
+- **`workers = 1` is mandatory.** `gunicorn.conf.py` enforces this. Multiple workers = multiple bot threads = duplicate orders against the same simulated account.
 - **Render free tier spins down** after 15 min of inactivity. Use UptimeRobot (free) to ping `/health` every 10 minutes. The bot loop must be restarted from the dashboard after a cold start.
 - **Backtest timeouts**: the Render default timeout is 30s; `gunicorn.conf.py` sets `timeout = 120` to accommodate long backtests with many tickers.
 
@@ -350,13 +342,14 @@ Source: *Markowitz, H. (1952). "Portfolio Selection." Journal of Finance.*
 
 ```
 backend/tests/
-├── test_risk.py       44 tests  — trailing stop, Kelly sizing, risk profiles, daily limits
+├── test_risk.py       26 tests  — trailing stop, Kelly sizing, risk profiles, daily limits
+├── test_simulator.py  20 tests  — buy/sell fills, cash flow, P&L, position tracking
 ├── test_features.py   13 tests  — SMA/RSI/MACD correctness on synthetic OHLCV data
 ├── test_portfolio.py  17 tests  — Markowitz constraints, efficient frontier math
 └── test_stats.py      23 tests  — PSR/DSR math, FF3 CSV parsing, OLS regression
 ```
 
-All 79 tests pass with zero network calls — every test uses synthetic in-memory data or monkeypatched API calls. Run with `pytest tests/ -v` from the `backend/` directory.
+All 99 tests pass with zero network calls — every test uses synthetic in-memory data or monkeypatched API calls. Run with `pytest tests/ -v` from the `backend/` directory.
 
 ---
 
