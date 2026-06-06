@@ -1,19 +1,46 @@
 import sqlite3
 import os
+import logging
 from datetime import datetime
 import numpy as np
 
+logger = logging.getLogger(__name__)
+
+# Local fallback path (always writable — lives next to this file).
+_LOCAL_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tradebot.db')
+
 # Allow DATABASE_PATH env var so Render's persistent disk can be used.
 # On Render: set DATABASE_PATH=/data/tradebot.db and mount a disk at /data/.
-# Without this, the DB lives on Render's ephemeral filesystem and is wiped on every deploy.
-DB_PATH = os.getenv(
-    'DATABASE_PATH',
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tradebot.db')
-)
+# Without this, the DB lives on the ephemeral filesystem and is wiped on every deploy.
+DB_PATH = os.getenv('DATABASE_PATH', '').strip() or _LOCAL_DB
+
+
+def _resolve_db_path():
+    """
+    Ensure the DB_PATH parent directory exists and is writable.
+
+    If DATABASE_PATH points at a directory that doesn't exist and can't be
+    created (e.g. /data with no persistent disk mounted on Render), fall back
+    to the local writable path so the app still starts instead of crashing.
+    """
+    global DB_PATH
+    parent = os.path.dirname(DB_PATH)
+    if parent:
+        try:
+            os.makedirs(parent, exist_ok=True)
+        except OSError:
+            logger.warning(
+                'Cannot create directory %s for DATABASE_PATH — '
+                'falling back to local path %s. '
+                '(On Render, mount a persistent disk at that path for persistence.)',
+                parent, _LOCAL_DB,
+            )
+            DB_PATH = _LOCAL_DB
+    return DB_PATH
 
 
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(_resolve_db_path())
     conn.row_factory = sqlite3.Row
     # WAL mode: allows concurrent reads while the bot thread writes snapshots.
     # Without this, Flask API reads and the bot write thread can collide and
