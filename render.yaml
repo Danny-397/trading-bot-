@@ -16,23 +16,18 @@ services:
 
     # No brokerage API keys needed — the bot uses an internal paper-trading
     # simulator that fills orders at real yfinance prices.
+    #
+    # No persistent disk: the SQLite DB lives on the ephemeral filesystem and
+    # resets on each deploy. To keep trade history across deploys, add a disk
+    # mounted at /data and set DATABASE_PATH=/data/tradebot.db (requires a
+    # paid Render plan — disks are not available on the free tier).
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"            # pandas/numpy/scipy ship wheels for 3.11;
                                    # newer Pythons force a slow source build that fails
 
-      - key: DATABASE_PATH
-        value: /data/tradebot.db   # persistent disk path
-
       - key: CORS_ORIGINS
         sync: false          # set to your Vercel URL after frontend deploy
                              # e.g. https://your-project.vercel.app
-
-    disk:
-      name: tradebot-db
-      mountPath: /data
-      sizeGB: 1
-      # Without this disk, SQLite is wiped on every deploy.
-      # $0.25/GB/month — prevents losing all trade history on redeploy.
 
     healthCheckPath: /health
