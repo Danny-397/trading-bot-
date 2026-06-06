@@ -62,7 +62,8 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   gap: 28px;
 }
-.lp-brand { display: flex; align-items: baseline; gap: 9px; }
+.lp-brand { display: flex; align-items: center; gap: 9px; }
+.brand-logo { width: 24px; height: 24px; color: var(--green-br); flex-shrink: 0; }
 .lp-brand-mark {
   font-family: var(--font-mono);
   font-size: 18px;

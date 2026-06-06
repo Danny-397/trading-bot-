@@ -11,14 +11,16 @@
   --border:   #30363d;
   --text:     #e6edf3;
   --muted:    #8b949e;
-  --blue:     #58a6ff;
+  /* Primary accent is green to match the landing page. The variable is still
+     named --blue for historical reasons — every accent in the app reads it. */
+  --blue:     #3fb950;
   --green:    #3fb950;
   --red:      #f85149;
   --yellow:   #e3b341;
   --purple:   #d2a8ff;
 
   /* derived */
-  --blue-dim:   rgba(88,166,255,0.12);
+  --blue-dim:   rgba(63,185,80,0.14);
   --green-dim:  rgba(63,185,80,0.12);
   --red-dim:    rgba(248,81,73,0.12);
   --yellow-dim: rgba(227,179,65,0.12);
@@ -90,10 +92,11 @@ a:hover { text-decoration: underline; }
 
 .nav-brand {
   display:     flex;
-  align-items: baseline;
+  align-items: center;
   gap:         8px;
   flex-shrink: 0;
 }
+.brand-logo { width: 20px; height: 20px; color: var(--green); flex-shrink: 0; }
 .nav-brand-name {
   font-family:    var(--font-mono);
   font-size:      16px;
@@ -257,7 +260,7 @@ a:hover { text-decoration: underline; }
 }
 .badge-green  { background: var(--green-dim);  color: var(--green);  border: 1px solid rgba(63,185,80,.3); }
 .badge-red    { background: var(--red-dim);    color: var(--red);    border: 1px solid rgba(248,81,73,.3); }
-.badge-blue   { background: var(--blue-dim);   color: var(--blue);   border: 1px solid rgba(88,166,255,.3); }
+.badge-blue   { background: var(--blue-dim);   color: var(--blue);   border: 1px solid rgba(63,185,80,.3); }
 .badge-yellow { background: var(--yellow-dim); color: var(--yellow); border: 1px solid rgba(227,179,65,.3); }
 .badge-purple { background: var(--purple-dim); color: var(--purple); border: 1px solid rgba(210,168,255,.3); }
 .badge-buy    { background: var(--green-dim);  color: var(--green);  border: 1px solid rgba(63,185,80,.3); }
@@ -376,7 +379,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   color:        var(--blue);
 }
 .btn-primary:hover:not(:disabled) {
-  background: rgba(88,166,255,0.2);
+  background: rgba(63,185,80,0.2);
 }
 
 .btn-danger {

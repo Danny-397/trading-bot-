@@ -236,9 +236,9 @@ function initDashboard() {
         labels,
         datasets: [{
           data:            values,
-          borderColor:     '#58a6ff',
+          borderColor:     '#3fb950',
           borderWidth:     2,
-          backgroundColor: 'rgba(88,166,255,0.08)',
+          backgroundColor: 'rgba(63,185,80,0.08)',
           fill:            true,
           tension:         0.3,
           pointRadius:     0,
@@ -391,8 +391,8 @@ function initBacktest() {
     const datasets = [
       {
         label: 'Strategy', data: curve.map(p => p.value),
-        borderColor: '#58a6ff', borderWidth: 2,
-        backgroundColor: 'rgba(88,166,255,0.06)', fill: true, tension: 0.2, pointRadius: 0,
+        borderColor: '#3fb950', borderWidth: 2,
+        backgroundColor: 'rgba(63,185,80,0.06)', fill: true, tension: 0.2, pointRadius: 0,
       },
     ]
     if (spy.length) datasets.push({
@@ -476,15 +476,15 @@ function initBacktest() {
       data: {
         labels: fc.dates,
         datasets: [
-          { label: 'P95',          data: fc.p95, borderColor: 'transparent', backgroundColor: 'rgba(88,166,255,0.04)', fill: '+1', pointRadius: 0 },
-          { label: 'P75',          data: fc.p75, borderColor: 'transparent', backgroundColor: 'rgba(88,166,255,0.08)', fill: '+1', pointRadius: 0 },
-          { label: 'P50 (Median)', data: fc.p50, borderColor: 'rgba(88,166,255,0.5)', borderWidth: 1.5, borderDash: [4, 3], backgroundColor: 'rgba(88,166,255,0.08)', fill: '+1', pointRadius: 0 },
-          { label: 'P25',          data: fc.p25, borderColor: 'transparent', backgroundColor: 'rgba(88,166,255,0.04)', fill: '+1', pointRadius: 0 },
+          { label: 'P95',          data: fc.p95, borderColor: 'transparent', backgroundColor: 'rgba(63,185,80,0.04)', fill: '+1', pointRadius: 0 },
+          { label: 'P75',          data: fc.p75, borderColor: 'transparent', backgroundColor: 'rgba(63,185,80,0.08)', fill: '+1', pointRadius: 0 },
+          { label: 'P50 (Median)', data: fc.p50, borderColor: 'rgba(63,185,80,0.5)', borderWidth: 1.5, borderDash: [4, 3], backgroundColor: 'rgba(63,185,80,0.08)', fill: '+1', pointRadius: 0 },
+          { label: 'P25',          data: fc.p25, borderColor: 'transparent', backgroundColor: 'rgba(63,185,80,0.04)', fill: '+1', pointRadius: 0 },
           { label: 'P5',           data: fc.p5,  borderColor: 'transparent', backgroundColor: 'transparent', fill: false, pointRadius: 0 },
           {
             label: 'Actual Strategy',
             data:  fc.dates.map((d, i) => actualValues[i + 1] ?? null),
-            borderColor: '#3fb950', borderWidth: 2.5, fill: false, pointRadius: 0,
+            borderColor: '#f0f6f0', borderWidth: 2.5, fill: false, pointRadius: 0,
           },
         ],
       },
@@ -619,8 +619,8 @@ function initBacktest() {
             labels: ['β Market', 'β SMB (Size)', 'β HML (Value)'],
             datasets: [{
               data:            [ff3.beta_market, ff3.beta_smb, ff3.beta_hml],
-              backgroundColor: ['rgba(88,166,255,0.55)', 'rgba(210,168,255,0.55)', 'rgba(227,179,65,0.55)'],
-              borderColor:     ['#58a6ff', '#d2a8ff', '#e3b341'],
+              backgroundColor: ['rgba(63,185,80,0.55)', 'rgba(210,168,255,0.55)', 'rgba(227,179,65,0.55)'],
+              borderColor:     ['#3fb950', '#d2a8ff', '#e3b341'],
               borderWidth:     1, borderRadius: 4,
             }],
           },
@@ -737,7 +737,7 @@ function initPortfolio() {
           {
             label: 'Efficient Frontier',
             data:  frontier.map(p => ({ x: p.volatility, y: p.return })),
-            borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.12)',
+            borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.12)',
             showLine: true, tension: 0.3, pointRadius: 2.5, borderWidth: 2,
           },
           {
