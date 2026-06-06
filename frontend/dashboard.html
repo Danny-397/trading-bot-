@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TradeBot — Live Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body data-page="dashboard">
+
+  <!-- ── Navigation ─────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="nav-brand-name">TradeBot</span>
+      <span class="nav-brand-sub">Research Platform</span>
+    </div>
+    <div class="nav-links">
+      <a href="index.html"     class="nav-link">Home</a>
+      <a href="dashboard.html" class="nav-link active">Dashboard</a>
+      <a href="backtest.html"  class="nav-link">Backtest</a>
+      <a href="portfolio.html" class="nav-link">Portfolio</a>
+    </div>
+    <span class="nav-badge">PAPER TRADING</span>
+  </nav>
+
+  <!-- ── Main ───────────────────────────────────────────────────────────── -->
+  <main class="page-wrap" data-page="dashboard">
+
+    <!-- Status bar -->
+    <div class="status-bar">
+      <div class="status-bar-item">
+        <span class="dot dot-red" id="bot-dot"></span>
+        <span id="bot-status-text" style="font-size:13px;font-weight:600;">BOT STOPPED</span>
+      </div>
+      <span class="status-bar-sep">|</span>
+      <div class="status-bar-item">
+        <span style="font-size:12px;color:var(--muted);">Strategy:</span>
+        <span id="strategy-label" style="font-size:13px;font-weight:600;color:var(--blue);">—</span>
+      </div>
+      <span class="status-bar-sep">|</span>
+      <div class="status-bar-item">
+        <span class="badge badge-red" id="market-status-badge">MARKET CLOSED</span>
+      </div>
+    </div>
+
+    <!-- Hero metrics row -->
+    <div class="hero-row">
+      <div class="hero-stat">
+        <div class="hero-stat-label">Portfolio Value</div>
+        <div class="hero-stat-value" id="hero-value">$—</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-label">Total Return</div>
+        <div class="hero-stat-value" id="hero-return">—</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-label">Daily P&amp;L</div>
+        <div class="hero-stat-value" id="hero-daily">—</div>
+      </div>
+      <div class="hero-stat">
+        <div class="hero-stat-label">Active Positions</div>
+        <div class="hero-stat-value" id="hero-positions">0</div>
+      </div>
+    </div>
+
+    <!-- Two-column layout -->
+    <div class="two-col">
+
+      <!-- Left column -->
+      <div>
+
+        <!-- Equity curve -->
+        <div class="card chart-section" style="margin-bottom:16px;">
+          <div class="section-header">Portfolio Performance</div>
+          <div class="chart-wrap">
+            <canvas id="eq-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- Open Positions table -->
+        <div class="card">
+          <div class="section-header">Open Positions</div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Shares</th>
+                  <th>Entry</th>
+                  <th>Current</th>
+                  <th>P&amp;L %</th>
+                  <th>Stop</th>
+                  <th>Target</th>
+                </tr>
+              </thead>
+              <tbody id="positions-tbody">
+                <tr>
+                  <td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">
+                    No open positions
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right column -->
+      <div>
+
+        <!-- Bot Controls -->
+        <div class="card" id="controls-card" style="margin-bottom:16px;">
+          <div class="section-header">Bot Controls</div>
+
+          <div class="form-group">
+            <label class="form-label">Strategy</label>
+            <select id="strategy-select">
+              <option value="adaptive">Adaptive (Regime-Based)</option>
+              <option value="ma_crossover">MA Crossover</option>
+              <option value="rsi">RSI Mean Reversion</option>
+              <option value="macd">MACD Momentum</option>
+              <option value="ml" disabled>ML (Stub)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Risk Tolerance</label>
+            <div class="risk-btn-group" id="risk-btns">
+              <button class="risk-btn" data-risk="conservative">Conservative</button>
+              <button class="risk-btn active" data-risk="moderate">Moderate</button>
+              <button class="risk-btn" data-risk="aggressive">Aggressive</button>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" id="start-stop-btn" style="width:100%;margin-top:4px;">
+            START BOT
+          </button>
+        </div>
+
+        <!-- Market Regime -->
+        <div class="card" id="regime-card" style="margin-bottom:16px;">
+          <div class="section-header">Market Regime</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+            <span class="regime-badge" id="regime-badge">UNKNOWN</span>
+          </div>
+          <div id="regime-description" style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.5;">
+            Waiting for data…
+          </div>
+          <div class="regime-metric-row">
+            <span class="regime-metric-label">ADX (Trend Strength)</span>
+            <span class="regime-metric-value" id="ri-adx">—</span>
+          </div>
+          <div class="regime-metric-row">
+            <span class="regime-metric-label">30-Day Volatility</span>
+            <span class="regime-metric-value" id="ri-vol">—</span>
+          </div>
+          <div class="regime-metric-row">
+            <span class="regime-metric-label">BB Width</span>
+            <span class="regime-metric-value" id="ri-bbw">—</span>
+          </div>
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
+            <span style="font-size:11px;color:var(--muted);">RECOMMENDED STRATEGY</span>
+            <div id="regime-strategy" style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--blue);margin-top:4px;">—</div>
+          </div>
+        </div>
+
+        <!-- Performance Stats -->
+        <div class="card">
+          <div class="section-header">Performance</div>
+          <div class="perf-grid">
+            <div class="perf-item">
+              <div class="perf-label">Win Rate</div>
+              <div class="perf-value" id="perf-winrate">—</div>
+            </div>
+            <div class="perf-item">
+              <div class="perf-label">Sharpe</div>
+              <div class="perf-value" id="perf-sharpe">—</div>
+            </div>
+            <div class="perf-item">
+              <div class="perf-label">Max Drawdown</div>
+              <div class="perf-value" id="perf-drawdown">—</div>
+            </div>
+            <div class="perf-item">
+              <div class="perf-label">Kelly Fraction</div>
+              <div class="perf-value" id="perf-kelly">—</div>
+            </div>
+            <div class="perf-item">
+              <div class="perf-label">Total Trades</div>
+              <div class="perf-value" id="perf-trades">—</div>
+            </div>
+            <div class="perf-item">
+              <div class="perf-label">Daily Trades</div>
+              <div class="perf-value" id="perf-daily">—</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div><!-- end .two-col -->
+
+    <!-- Full-width bottom: tabs for Trades + Activity -->
+    <div class="card" style="margin-top:16px;">
+      <div class="tab-list">
+        <button class="tab-btn active" data-tab="trades-tab">Recent Trades</button>
+        <button class="tab-btn" data-tab="activity-tab">Activity Log</button>
+      </div>
+
+      <div class="tab-panel active" id="trades-tab">
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Ticker</th>
+                <th>Action</th>
+                <th>Price</th>
+                <th>Shares</th>
+                <th>P&amp;L</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody id="trades-tbody">
+              <tr>
+                <td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">
+                  No trades yet — start the bot to begin trading
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="activity-tab">
+        <div class="scroll-box" id="activity-log">
+          <div style="text-align:center;color:var(--muted);padding:24px;font-size:13px;">
+            Waiting for bot activity…
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

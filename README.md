@@ -109,6 +109,7 @@ Indicators: **ADX** (Wilder's smoothing), **Bollinger Band Width** (consolidatio
 | High-vol behaviour | Sits out entirely | Half-size positions | Full size |
 
 ### Dashboard & UI
+- **Landing page**: clean green/black marketing page (`index.html`) — distinct from the blue app, links into the platform
 - **Live dashboard**: portfolio value, open positions, equity curve, regime card, recent trades — auto-refreshes every 10 seconds
 - **Backtest interface**: sticky sidebar form + 4-tab results (Performance / Monte Carlo / ⚗ Research / Trades)
 - **Portfolio optimizer**: efficient frontier chart, optimal weight bar displays, correlation matrix heatmap
@@ -138,7 +139,7 @@ All indicator maths (SMA, EMA, RSI, MACD, ADX, Bollinger Bands) are implemented 
 - Vanilla HTML5 / CSS3 / JavaScript (ES2022)
 - Chart.js 4.4 (line, scatter, horizontal bar charts)
 - Inter + JetBrains Mono (Google Fonts)
-- No React, no Vue, no Webpack — open `index.html` in any browser
+- No React, no Vue, no Webpack — open any `.html` file in a browser
 
 ### CI/CD
 - GitHub Actions: syntax check (`py_compile`), flake8 lint, pytest (99 tests), DB + simulator smoke test
@@ -172,10 +173,13 @@ trading-bot-/
 │       ├── test_portfolio.py  17 tests — Markowitz constraints, frontier math, data layer
 │       └── test_stats.py      23 tests — PSR/DSR math, FF3 CSV parsing, OLS regression
 ├── frontend/
-│   ├── index.html       Live trading dashboard
+│   ├── index.html       Landing page (green/black marketing page)
+│   ├── dashboard.html   Live trading dashboard
 │   ├── backtest.html    Backtest interface with Research tab
 │   ├── portfolio.html   Markowitz portfolio optimizer
-│   ├── style.css        Design system (Inter + JetBrains Mono, dark theme)
+│   ├── landing.css      Landing page styles (green/black, distinct from app)
+│   ├── style.css        App design system (Inter + JetBrains Mono, dark blue)
+│   ├── config.js        Sets the Render backend URL for production
 │   └── app.js           All client logic — dashboard, backtest, portfolio optimizer
 ├── .github/
 │   └── workflows/ci.yml
@@ -247,12 +251,13 @@ python backend/app.py
 
 ### 4. Open the frontend
 ```bash
-# Option A: open directly
+# Option A: open directly — index.html is the landing page;
+# click "Launch Platform" to reach the dashboard
 open frontend/index.html
 
 # Option B: local dev server (avoids CORS issues)
 python -m http.server 3000 -d frontend
-# → http://localhost:3000
+# → http://localhost:3000  (dashboard at /dashboard.html)
 ```
 
 ### 5. Run the test suite
