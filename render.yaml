@@ -17,6 +17,10 @@ services:
     # No brokerage API keys needed — the bot uses an internal paper-trading
     # simulator that fills orders at real yfinance prices.
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"            # pandas/numpy/scipy ship wheels for 3.11;
+                                   # newer Pythons force a slow source build that fails
+
       - key: DATABASE_PATH
         value: /data/tradebot.db   # persistent disk path
 
