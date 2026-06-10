@@ -9,6 +9,9 @@ from datetime import datetime, timedelta
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 
 import backtest as backtester
@@ -32,12 +35,41 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# Render terminates TLS at a single proxy hop and forwards the real client IP
+# in X-Forwarded-For. Trust exactly one hop so rate limiting keys on the actual
+# visitor's IP rather than the proxy (otherwise everyone shares one bucket).
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+
 # CORS: in production, replace the origins list with your Vercel URL to lock
 # down which frontends can call this API.
 # e.g. CORS(app, origins=['https://your-project.vercel.app'])
 # For local development, allow all origins.
 _cors_origins = os.getenv('CORS_ORIGINS', '*')
 CORS(app, origins=_cors_origins)
+
+# Per-IP rate limiting. The dashboard polls ~24 req/min per open tab, so the
+# default ceiling is generous enough for normal use (several tabs) while still
+# stopping a script that floods the API. The expensive endpoints (backtest,
+# portfolio optimize) get a much stricter cap below — those do heavy compute and
+# uncached data downloads, so they're the real abuse/availability risk.
+# Storage is in-process memory, which is correct here because gunicorn runs a
+# single worker (see gunicorn.conf.py).
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=['200 per minute', '5000 per day'],
+    storage_uri='memory://',
+)
+
+
+@app.errorhandler(429)
+def ratelimit_handler(exc):
+    return jsonify({
+        'error': 'Rate limit exceeded — please slow down and try again shortly.',
+        'limit': str(exc.description),
+    }), 429
+
+
 database.init_db()
 simulator.init_simulator()
 # Render free tier spins the process down on inactivity and gunicorn can recycle
@@ -192,6 +224,7 @@ def validate_ticker():
 # ── Backtesting ───────────────────────────────────────────────────────────────
 
 @app.route('/api/backtest', methods=['POST'])
+@limiter.limit('20 per hour')
 def run_backtest():
     data            = request.get_json() or {}
     strategy        = data.get('strategy', 'adaptive')
@@ -232,6 +265,7 @@ def run_backtest():
 # ── Portfolio optimization ─────────────────────────────────────────────────────
 
 @app.route('/api/portfolio/optimize', methods=['POST'])
+@limiter.limit('20 per hour')
 def optimize_portfolio():
     """
     Compute the Markowitz efficient frontier for the requested tickers.
@@ -261,7 +295,10 @@ def optimize_portfolio():
 # ── Health check ──────────────────────────────────────────────────────────────
 
 @app.route('/health')
+@limiter.exempt
 def health():
+    # Exempt: UptimeRobot (or similar) pings this frequently to keep the free
+    # Render instance warm — it must never be rate limited.
     return jsonify({'status': 'ok', 'ts': datetime.utcnow().isoformat()})
 
 
