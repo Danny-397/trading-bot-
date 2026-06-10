@@ -1,1 +1,0 @@
-print("this is for the new basic trading bot that will back test data")
