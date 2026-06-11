@@ -53,18 +53,35 @@
       </div>
     </div>
 
+    <!-- First-run onboarding banner (dismissible) -->
+    <div class="onboard" id="onboard" hidden>
+      <div class="onboard-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+        </svg>
+      </div>
+      <div class="onboard-text">
+        <strong>New here?</strong> TradeBot trades with simulated money at real market prices — no real funds, ever.
+        Click <strong>Start Bot</strong> for live paper trading, or run a backtest to watch a strategy play out instantly on historical data.
+      </div>
+      <div class="onboard-actions">
+        <a href="backtest.html" class="btn btn-primary btn-sm">Run a backtest →</a>
+        <button class="onboard-close" id="onboard-close" aria-label="Dismiss">×</button>
+      </div>
+    </div>
+
     <!-- Hero metrics row -->
     <div class="hero-row">
       <div class="hero-stat">
-        <div class="hero-stat-label">Portfolio Value</div>
+        <div class="hero-stat-label">Portfolio Value<i class="info" tabindex="0" data-tip="Total account value — cash plus the market value of every open position." aria-label="What is portfolio value?"></i></div>
         <div class="hero-stat-value" id="hero-value">$—</div>
       </div>
       <div class="hero-stat">
-        <div class="hero-stat-label">Total Return</div>
+        <div class="hero-stat-label">Total Return<i class="info" tabindex="0" data-tip="Percent change in total portfolio value since the bot started trading." aria-label="What is total return?"></i></div>
         <div class="hero-stat-value" id="hero-return">—</div>
       </div>
       <div class="hero-stat">
-        <div class="hero-stat-label">Daily P&amp;L</div>
+        <div class="hero-stat-label">Invested<i class="info" tabindex="0" data-tip="Market value of all open positions. Whatever isn’t invested is held as cash." aria-label="What is invested?"></i></div>
         <div class="hero-stat-value" id="hero-daily">—</div>
       </div>
       <div class="hero-stat">
@@ -158,15 +175,15 @@
             Waiting for data…
           </div>
           <div class="regime-metric-row">
-            <span class="regime-metric-label">ADX (Trend Strength)</span>
+            <span class="regime-metric-label">ADX (Trend Strength)<i class="info" tabindex="0" data-tip="Average Directional Index — how strong the trend is, regardless of direction. Above 25 means a strong trend; below 20 means the market is drifting sideways." aria-label="What is ADX?"></i></span>
             <span class="regime-metric-value" id="ri-adx">—</span>
           </div>
           <div class="regime-metric-row">
-            <span class="regime-metric-label">30-Day Volatility</span>
+            <span class="regime-metric-label">30-Day Volatility<i class="info" tabindex="0" data-tip="How much prices have swung over the last 30 days, annualized. Higher means a choppier, riskier market." aria-label="What is 30-day volatility?"></i></span>
             <span class="regime-metric-value" id="ri-vol">—</span>
           </div>
           <div class="regime-metric-row">
-            <span class="regime-metric-label">BB Width</span>
+            <span class="regime-metric-label">BB Width<i class="info" tabindex="0" data-tip="Bollinger Band Width — how far apart the price bands sit. Narrow bands signal a quiet, coiled market that often precedes a big move." aria-label="What is Bollinger Band Width?"></i></span>
             <span class="regime-metric-value" id="ri-bbw">—</span>
           </div>
           <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);">
@@ -180,19 +197,19 @@
           <div class="section-header">Performance</div>
           <div class="perf-grid">
             <div class="perf-item">
-              <div class="perf-label">Win Rate</div>
+              <div class="perf-label">Win Rate<i class="info" tabindex="0" data-tip="The share of closed trades that ended in a profit." aria-label="What is win rate?"></i></div>
               <div class="perf-value" id="perf-winrate">—</div>
             </div>
             <div class="perf-item">
-              <div class="perf-label">Sharpe</div>
+              <div class="perf-label">Sharpe<i class="info" tabindex="0" data-tip="Return earned per unit of risk. Above 1 is good; above 2 is excellent." aria-label="What is the Sharpe ratio?"></i></div>
               <div class="perf-value" id="perf-sharpe">—</div>
             </div>
             <div class="perf-item">
-              <div class="perf-label">Max Drawdown</div>
+              <div class="perf-label">Max Drawdown<i class="info" tabindex="0" data-tip="The largest drop from a peak to a later low — the worst dip you would have had to sit through." aria-label="What is max drawdown?"></i></div>
               <div class="perf-value" id="perf-drawdown">—</div>
             </div>
             <div class="perf-item">
-              <div class="perf-label">Kelly Fraction</div>
+              <div class="perf-label">Kelly Fraction<i class="info" tabindex="0" data-tip="The mathematically optimal share of capital to risk per trade, derived from the bot's historical win rate and average payoff." aria-label="What is the Kelly fraction?"></i></div>
               <div class="perf-value" id="perf-kelly">—</div>
             </div>
             <div class="perf-item">
@@ -200,7 +217,7 @@
               <div class="perf-value" id="perf-trades">—</div>
             </div>
             <div class="perf-item">
-              <div class="perf-label">Daily Trades</div>
+              <div class="perf-label">Daily Trades<i class="info" tabindex="0" data-tip="Trades made today versus the daily cap set by your risk profile." aria-label="What are daily trades?"></i></div>
               <div class="perf-value" id="perf-daily">—</div>
             </div>
           </div>

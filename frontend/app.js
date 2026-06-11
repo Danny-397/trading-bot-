@@ -54,8 +54,42 @@ const clr    = n  => n == null ? '' : n > 0 ? 'positive' : n < 0 ? 'negative' : 
 const today  = () => new Date().toISOString().slice(0, 10)
 const daysAgo = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10)
 
+// Plain-English explanations of every quant term shown in the UI. Any stat card
+// whose label matches a key automatically gets a hoverable ⓘ tooltip — so the
+// glossary stays in one place and new stats are covered for free.
+const GLOSSARY = {
+  'Total Return':     'The strategy’s percent gain or loss over the whole test period.',
+  'Final Value':      'What your starting capital grew (or shrank) to by the end.',
+  'Sharpe Ratio':     'Return earned per unit of risk. Above 1 is good; above 2 is excellent.',
+  'Max Drawdown':     'The largest drop from a peak to a later low — the worst dip you would have sat through.',
+  'Win Rate':         'The share of closed trades that ended in a profit.',
+  'Benchmark Return': 'What you would have made by simply buying and holding SPY over the same period.',
+  'Calmar Ratio':     'Annual return divided by max drawdown — how much reward you got for the risk taken.',
+  'Total Trades':     'Number of completed round-trip trades.',
+  'Winning Trades':   'Trades that closed for a profit.',
+  'Losing Trades':    'Trades that closed for a loss.',
+  'Avg Win':          'Average profit on the trades that made money.',
+  'Avg Loss':         'Average loss on the trades that lost money.',
+  'Best Trade':       'The single most profitable trade.',
+  'Worst Trade':      'The single biggest losing trade.',
+  'Total Costs':      'Commissions and slippage paid across every trade.',
+  'Kelly Fraction':   'The mathematically optimal share of capital to risk per trade, from the historical win rate and payoff.',
+  'Kelly %':          'The mathematically optimal share of capital to risk per trade, from the historical win rate and payoff.',
+  'vs SPY':           'How the strategy did versus buying and holding SPY — positive means it beat the market.',
+  'Gross Return':     'Return before trading costs are subtracted.',
+  'Deflated Sharpe':  'The Sharpe ratio corrected for luck and for testing many strategies. Above 95% means the result is very likely real.',
+  'Probabilistic Sharpe': 'The probability the true Sharpe ratio is above zero, after accounting for fat tails and sample size.',
+  'Annualized Alpha': 'Return that can’t be explained by overall market, size, or value exposure — a proxy for genuine skill.',
+}
+
+function infoIcon(label) {
+  const tip = GLOSSARY[label]
+  if (!tip) return ''
+  return ` <i class="info" tabindex="0" data-tip="${tip.replace(/"/g, '&quot;')}" aria-label="What is ${label}?"></i>`
+}
+
 function statCard(label, value, cls = '') {
-  return `<div class="stat-card"><div class="stat-value ${cls}">${value}</div><div class="stat-label">${label}</div></div>`
+  return `<div class="stat-card"><div class="stat-value ${cls}">${value}</div><div class="stat-label">${label}${infoIcon(label)}</div></div>`
 }
 
 function weightBars(weights) {
@@ -100,6 +134,16 @@ function initDashboard() {
   let botRunning = false
 
   initTabs(document.body)
+
+  // First-run onboarding banner — shown until the visitor dismisses it.
+  const onboard = el('onboard')
+  if (onboard && !localStorage.getItem('tb_onboard_dismissed')) {
+    onboard.hidden = false
+    el('onboard-close').addEventListener('click', () => {
+      onboard.hidden = true
+      localStorage.setItem('tb_onboard_dismissed', '1')
+    })
+  }
 
   const startStopBtn   = el('start-stop-btn')
   const strategySelect = el('strategy-select')
@@ -420,6 +464,8 @@ function initBacktest() {
       wfb.hidden = true
     }
 
+    renderSummary(m)
+
     el('summary-stats').innerHTML = [
       statCard('Total Return', fmtPct(m.total_return), clr(m.total_return)),
       statCard('Final Value',  fmt$(m.final_value)),
@@ -433,6 +479,40 @@ function initBacktest() {
     renderMonteCarlo(data.monte_carlo, data.equity_curve)
     renderResearchTab(data)
     renderTradesTable(data.trades || [])
+  }
+
+  // Turn the raw backtest metrics into one human-readable paragraph + a verdict
+  // a non-expert can act on. Directly answers "why did it (under/over)perform?"
+  function renderSummary(m) {
+    const box = el('bt-summary')
+    if (!box) return
+    if (m.total_return == null) { box.hidden = true; return }
+
+    const ret = m.total_return, bench = m.benchmark_return, dd = m.max_drawdown
+    const wr = m.win_rate, n = m.total_trades, fv = m.final_value, cap = m.initial_capital
+    const verb = ret >= 0 ? 'grew' : 'shrank'
+
+    let s = `Starting from ${fmt$(cap)}, the strategy ${verb} to <strong>${fmt$(fv)}</strong> — a <strong>${fmtPct(ret)}</strong> return`
+    if (bench != null) s += `, versus <strong>${fmtPct(bench)}</strong> for simply buying and holding the market (SPY)`
+    s += '. '
+    if (n != null) {
+      s += `It made <strong>${n}</strong> trade${n === 1 ? '' : 's'}`
+      if (wr != null) s += ` with a <strong>${fmtN(wr, 0)}% win rate</strong>`
+      if (dd != null) s += `, and its deepest peak-to-low dip was just <strong>${fmtN(dd, 1)}%</strong>`
+      s += '.'
+    }
+
+    let take = ''
+    if (bench != null && ret > bench) {
+      take = `It beat buy-and-hold over this period${dd != null ? `, with the worst drop held to ${fmtN(dd, 1)}%` : ''} — outperforming with controlled risk.`
+    } else if (bench != null) {
+      take = `It trailed buy-and-hold here, but ${dd != null ? `with a far smaller drawdown (${fmtN(dd, 1)}%)` : 'with less risk'}. Defensive strategies like this give up upside in strong bull markets and protect capital when markets fall — judge them over a full cycle, not a single year.`
+    } else if (ret >= 0) {
+      take = 'A positive result — open the Research tab to check whether it is statistically real or just luck.'
+    }
+
+    box.innerHTML = s + (take ? `<span class="summary-take">${take}</span>` : '')
+    box.hidden = false
   }
 
   function renderBtChart(data) {
