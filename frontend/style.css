@@ -4,20 +4,25 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── CSS Custom Properties ──────────────────────────────────────────────── */
+/* Palette mirrors the landing page (landing.css): near-black with a green
+   undertone + financial green accent, so the app and landing read as one
+   product instead of two. */
 :root {
-  --bg:       #0d1117;
-  --surface:  #161b22;
-  --surface2: #21262d;
-  --border:   #30363d;
-  --text:     #e6edf3;
-  --muted:    #8b949e;
+  --bg:        #080b0a;
+  --surface:   #0f1411;
+  --surface2:  #151c17;
+  --border:    #1e2723;
+  --border-lt: #2a352f;
+  --text:      #e9efeb;
+  --muted:     #8a978f;
   /* Primary accent is green to match the landing page. The variable is still
      named --blue for historical reasons — every accent in the app reads it. */
-  --blue:     #3fb950;
-  --green:    #3fb950;
-  --red:      #f85149;
-  --yellow:   #e3b341;
-  --purple:   #d2a8ff;
+  --blue:       #3fb950;
+  --green:      #3fb950;
+  --green-deep: #2ea043;
+  --red:        #f85149;
+  --yellow:     #e3b341;
+  --purple:     #d2a8ff;
 
   /* derived */
   --blue-dim:   rgba(63,185,80,0.14);
@@ -28,9 +33,9 @@
 
   --font-ui:   'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-  --radius:    8px;
-  --radius-sm: 4px;
-  --shadow:    0 1px 3px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3);
+  --radius:    10px;
+  --radius-sm: 6px;
+  --shadow:    0 1px 3px rgba(0,0,0,0.55), 0 8px 28px rgba(0,0,0,0.35);
 }
 
 /* ── Reset / Base ───────────────────────────────────────────────────────── */
@@ -44,6 +49,10 @@ html { scroll-behavior: smooth; }
 
 body {
   background:  var(--bg);
+  /* faint green halo at the top — the landing page's signature glow */
+  background-image: radial-gradient(1100px 480px at 50% -160px,
+                                    rgba(46,160,67,0.07), transparent 70%);
+  background-repeat: no-repeat;
   color:       var(--text);
   font-family: var(--font-ui);
   font-size:   14px;
@@ -51,6 +60,8 @@ body {
   min-height:  100vh;
   -webkit-font-smoothing: antialiased;
 }
+
+::selection { background: rgba(46,160,67,0.28); color: var(--text); }
 
 /* Numbers, data, code — mono everywhere */
 .mono,
@@ -70,9 +81,9 @@ a:hover { text-decoration: underline; }
 
 /* ── Scrollbar ──────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar              { width: 6px; height: 6px; }
-::-webkit-scrollbar-track        { background: var(--surface); }
-::-webkit-scrollbar-thumb        { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover  { background: var(--muted); }
+::-webkit-scrollbar-track        { background: var(--bg); }
+::-webkit-scrollbar-thumb        { background: var(--border-lt); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover  { background: var(--green-deep); }
 
 /* ── Navbar ─────────────────────────────────────────────────────────────── */
 .navbar {
@@ -82,7 +93,9 @@ a:hover { text-decoration: underline; }
   right:           0;
   z-index:         200;
   height:          56px;
-  background:      var(--surface);
+  background:      rgba(8, 11, 10, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-bottom:   1px solid var(--border);
   display:         flex;
   align-items:     center;
@@ -162,7 +175,9 @@ a:hover { text-decoration: underline; }
   border:        1px solid var(--border);
   border-radius: var(--radius);
   padding:       20px;
+  transition:    border-color .15s;
 }
+.card:hover { border-color: var(--border-lt); }
 .card + .card { margin-top: 16px; }
 
 /* ── Section headers ────────────────────────────────────────────────────── */
@@ -191,7 +206,20 @@ a:hover { text-decoration: underline; }
   border:        1px solid var(--border);
   border-radius: var(--radius);
   padding:       20px 24px;
+  position:      relative;
+  overflow:      hidden;
+  transition:    border-color .15s;
 }
+/* thin green light-bar across the top — the app's signature cyber accent */
+.hero-stat::before {
+  content:    '';
+  position:   absolute;
+  top: 0; left: 0; right: 0;
+  height:     2px;
+  background: linear-gradient(90deg, transparent 0%,
+                              rgba(63,185,80,0.55) 50%, transparent 100%);
+}
+.hero-stat:hover { border-color: var(--border-lt); }
 .hero-stat-value {
   font-family: var(--font-mono);
   font-size:   28px;
@@ -341,7 +369,10 @@ input[type="number"]:focus,
 input[type="date"]:focus,
 select:focus,
 .input:focus,
-.select:focus { border-color: var(--blue); }
+.select:focus {
+  border-color: var(--blue);
+  box-shadow:   0 0 0 3px rgba(63,185,80,0.13);
+}
 
 select option  { background: var(--surface); }
 
@@ -370,16 +401,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   white-space:    nowrap;
   user-select:    none;
 }
-.btn:hover:not(:disabled) { background: var(--border); }
-.btn:disabled              { opacity: .4; cursor: not-allowed; }
+.btn:hover:not(:disabled)  { background: var(--border); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled               { opacity: .4; cursor: not-allowed; }
 
+/* Solid green with dark text — same treatment as the landing page CTA */
 .btn-primary {
-  background:   var(--blue-dim);
-  border-color: var(--blue);
-  color:        var(--blue);
+  background:   var(--green-deep);
+  border-color: var(--green-deep);
+  color:        #04140a;
 }
 .btn-primary:hover:not(:disabled) {
-  background: rgba(63,185,80,0.2);
+  background:   var(--green);
+  border-color: var(--green);
+  box-shadow:   0 0 16px rgba(63,185,80,0.25);
 }
 
 .btn-danger {
@@ -1013,7 +1048,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   width:          max-content;
   max-width:      240px;
   padding:        8px 11px;
-  background:     #0b0f14;
+  background:     #0a0f0c;
   border:         1px solid var(--border);
   border-radius:  var(--radius-sm);
   color:          var(--text);

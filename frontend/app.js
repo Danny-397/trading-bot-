@@ -120,8 +120,8 @@ function weightBars(weights) {
       </div>`).join('')
 }
 
-Chart.defaults.color       = '#8b949e'
-Chart.defaults.borderColor = '#30363d'
+Chart.defaults.color       = '#8a978f'
+Chart.defaults.borderColor = '#2a352f'
 Chart.defaults.font.family = "'JetBrains Mono', monospace"
 Chart.defaults.font.size   = 11
 
@@ -313,7 +313,7 @@ function initDashboard() {
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' ' + fmt$(c.parsed.y) } } },
         scales: {
           x: { grid: { display: false }, ticks: { maxTicksLimit: 6, maxRotation: 0 } },
-          y: { grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } },
+          y: { grid: { color: 'rgba(36,48,42,0.55)' }, ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } },
         },
       },
     })
@@ -555,7 +555,7 @@ function initBacktest() {
     })
     datasets.push({
       label: 'Initial Capital', data: curve.map(() => capital),
-      borderColor: '#30363d', borderWidth: 1, borderDash: [2, 4],
+      borderColor: '#2a352f', borderWidth: 1, borderDash: [2, 4],
       fill: false, pointRadius: 0,
     })
 
@@ -571,7 +571,7 @@ function initBacktest() {
         },
         scales: {
           x: { grid: { display: false }, ticks: { maxTicksLimit: 8, maxRotation: 0 } },
-          y: { grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } },
+          y: { grid: { color: 'rgba(36,48,42,0.55)' }, ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } },
         },
       },
     })
@@ -604,7 +604,7 @@ function initBacktest() {
           <th>Total P&L</th><th>Avg P&L</th><th>Best</th><th>Worst</th>
         </tr></thead>
         <tbody>${entries.map(([r, v]) => `<tr>
-          <td><span style="color:${REGIME_COLORS[r] || '#8b949e'};font-weight:700;">${v.label || r}</span></td>
+          <td><span style="color:${REGIME_COLORS[r] || '#8a978f'};font-weight:700;">${v.label || r}</span></td>
           <td>${v.trade_count}</td>
           <td>${v.win_rate}%</td>
           <td class="${clr(v.total_pnl)}">${fmt$(v.total_pnl)}</td>
@@ -649,7 +649,7 @@ function initBacktest() {
         },
         scales: {
           x: { grid: { display: false }, ticks: { maxTicksLimit: 6, maxRotation: 0 } },
-          y: { grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } },
+          y: { grid: { color: 'rgba(36,48,42,0.55)' }, ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } },
         },
       },
     })
@@ -781,7 +781,7 @@ function initBacktest() {
             indexAxis: 'y', responsive: true,
             plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ' β = ' + fmtN(c.parsed.x, 4) } } },
             scales: {
-              x: { grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => v.toFixed(2) } },
+              x: { grid: { color: 'rgba(36,48,42,0.55)' }, ticks: { callback: v => v.toFixed(2) } },
               y: { grid: { display: false } },
             },
           },
@@ -908,7 +908,7 @@ function initPortfolio() {
           {
             label: 'Individual Assets',
             data:  Object.entries(assets).map(([t, a]) => ({ x: a.volatility, y: a.expected_return, label: t })),
-            borderColor: '#8b949e', backgroundColor: 'rgba(139,148,158,0.5)',
+            borderColor: '#8a978f', backgroundColor: 'rgba(138,151,143,0.5)',
             pointRadius: 5, pointHoverRadius: 7,
           },
         ],
@@ -924,8 +924,8 @@ function initPortfolio() {
           }}},
         },
         scales: {
-          x: { title: { display: true, text: 'Annualised Volatility (%)', color: '#8b949e' }, grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => v.toFixed(1) + '%' } },
-          y: { title: { display: true, text: 'Annualised Return (%)',    color: '#8b949e' }, grid: { color: 'rgba(48,54,61,0.6)' }, ticks: { callback: v => v.toFixed(1) + '%' } },
+          x: { title: { display: true, text: 'Annualised Volatility (%)', color: '#8a978f' }, grid: { color: 'rgba(36,48,42,0.55)' }, ticks: { callback: v => v.toFixed(1) + '%' } },
+          y: { title: { display: true, text: 'Annualised Return (%)',    color: '#8a978f' }, grid: { color: 'rgba(36,48,42,0.55)' }, ticks: { callback: v => v.toFixed(1) + '%' } },
         },
       },
     })
