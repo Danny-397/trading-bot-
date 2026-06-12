@@ -90,21 +90,37 @@ def build():
     kept, skipped = [], []
     t0 = time.time()
 
-    # Warm the macro cache once — shared by every ticker.
-    mlf.fetch_macro(START_DATE, end_date)
+    # Warm the macro cache once — every ticker then slices it for free.
+    # This single chunked FRED fetch takes ~90s; if it fails, macro is
+    # zero-filled and the build still completes (modality dropout handles it).
+    print('Fetching macro data from FRED (one-time, ~90s)…', flush=True)
+    macro = mlf.fetch_macro(START_DATE, end_date)
+    print('  macro:', 'OK' if macro is not None else 'unavailable — zero-filled',
+          flush=True)
+    if not os.getenv('ML_SKIP_SENTIMENT'):
+        print('News sentiment (GDELT) enabled — it auto-disables if rate-limited. '
+              'Set ML_SKIP_SENTIMENT=1 to skip it for a faster run.', flush=True)
 
     for i, ticker in enumerate(TICKERS, 1):
-        ohlcv = feat.fetch_ohlcv(ticker, start=START_DATE, end=end_date)
-        if ohlcv is None or len(ohlcv) < 500:
-            skipped.append(ticker)
-            print(f'[{i:>2}/{len(TICKERS)}] {ticker:<6} SKIPPED (insufficient data)')
-            continue
+        try:
+            ohlcv = feat.fetch_ohlcv(ticker, start=START_DATE, end=end_date)
+            if ohlcv is None or len(ohlcv) < 500:
+                skipped.append(ticker)
+                print(f'[{i:>2}/{len(TICKERS)}] {ticker:<6} SKIPPED (insufficient data)',
+                      flush=True)
+                continue
 
-        frame  = mlf.build_feature_frame(ohlcv, ticker)
-        labels = mlf.build_labels(ohlcv)
+            frame  = mlf.build_feature_frame(ohlcv, ticker)
+            labels = mlf.build_labels(ohlcv)
+        except Exception as exc:                      # never let one ticker kill the build
+            skipped.append(ticker)
+            print(f'[{i:>2}/{len(TICKERS)}] {ticker:<6} SKIPPED ({type(exc).__name__})',
+                  flush=True)
+            continue
         if frame is None:
             skipped.append(ticker)
-            print(f'[{i:>2}/{len(TICKERS)}] {ticker:<6} SKIPPED (feature build failed)')
+            print(f'[{i:>2}/{len(TICKERS)}] {ticker:<6} SKIPPED (feature build failed)',
+                  flush=True)
             continue
 
         labels = labels.reindex(frame.index)
@@ -117,7 +133,7 @@ def build():
         arrays[f'd_{ticker}'] = np.array([d.strftime('%Y-%m-%d') for d in frame.index])
         kept.append(ticker)
         print(f'[{i:>2}/{len(TICKERS)}] {ticker:<6} {len(frame):>5} days  '
-              f'({time.time() - t0:5.0f}s elapsed)')
+              f'({time.time() - t0:5.0f}s elapsed)', flush=True)
 
     if not kept:
         raise SystemExit('No tickers succeeded — check TIINGO_API_KEY and connectivity.')

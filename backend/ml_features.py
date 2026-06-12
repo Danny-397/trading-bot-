@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 import time
 
 import numpy as np
@@ -73,8 +74,7 @@ PRICE_SLICE = slice(0, len(PRICE_FEATURES))
 MACRO_SLICE = slice(len(PRICE_FEATURES), len(PRICE_FEATURES) + len(MACRO_FEATURES))
 SENTI_SLICE = slice(len(PRICE_FEATURES) + len(MACRO_FEATURES), len(ALL_FEATURES))
 
-# ── In-process caches (macro/sentiment change at most daily) ──────────────────
-_MACRO_CACHE: dict = {}
+# ── In-process sentiment cache (macro uses its own covering cache below) ──────
 _SENTI_CACHE: dict = {}
 _CACHE_TTL = 6 * 3600          # 6 hours
 
@@ -89,67 +89,117 @@ _GDELT_URL = 'https://api.gdeltproject.org/api/v2/doc/doc'
 
 
 # ── Macro block (FRED) ─────────────────────────────────────────────────────────
+# FRED's CSV endpoint is fast for short ranges but times out on multi-year ones,
+# so each series is fetched in <=1-year chunks. The assembled frame is cached
+# with a covering-range check, so an 80-ticker dataset build fetches FRED only
+# once (each ticker just slices the cache) — the fix for the Colab timeouts.
 
-def fetch_macro(start: str, end: str) -> pd.DataFrame | None:
-    """
-    Daily macro features from FRED's free CSV endpoint (no API key).
+_HTTP_UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+_MACRO_MIN_START = pd.Timestamp('2010-01-01')
+_macro_frame: pd.DataFrame | None = None
+_macro_lo: pd.Timestamp | None = None
+_macro_hi: pd.Timestamp | None = None
+_macro_failed = False
 
-    Returns a DataFrame indexed by date with MACRO_FEATURES columns,
-    forward-filled over non-trading days, or None when FRED is unreachable.
-    """
-    key = ('macro', start, end)
-    hit = _MACRO_CACHE.get(key)
-    if hit and (time.time() - hit[0]) < _CACHE_TTL:
-        return hit[1]
 
-    # Pad the window back so forward-fill always has a prior observation,
-    # even when the requested range starts on a weekend or holiday.
-    cosd = (pd.Timestamp(start) - pd.Timedelta(days=14)).strftime('%Y-%m-%d')
+def _fred_series_chunked(fred_id: str, lo: pd.Timestamp, hi: pd.Timestamp):
+    """Fetch one FRED series in <=1-year chunks; returns a Series or None."""
+    parts, cur = [], lo
+    while cur <= hi:
+        chunk_hi = min(cur + pd.DateOffset(years=1), hi)
+        for attempt in range(3):
+            try:
+                resp = requests.get(
+                    _FRED_URL,
+                    params={'id': fred_id, 'cosd': cur.strftime('%Y-%m-%d'),
+                            'coed': chunk_hi.strftime('%Y-%m-%d')},
+                    timeout=25, headers=_HTTP_UA)
+                resp.raise_for_status()
+                df = pd.read_csv(io.StringIO(resp.text), na_values='.')
+                dcol, vcol = df.columns[0], df.columns[1]
+                df[dcol] = pd.to_datetime(df[dcol])
+                parts.append(df.set_index(dcol)[vcol])
+                break
+            except Exception as exc:
+                logger.warning('FRED %s %d attempt %d/3: %s',
+                               fred_id, cur.year, attempt + 1, exc)
+                time.sleep(1.5 * (attempt + 1))
+        else:
+            return None           # a chunk exhausted its retries
+        cur = chunk_hi + pd.Timedelta(days=1)
+    if not parts:
+        return None
+    s = pd.concat(parts)
+    return s[~s.index.duplicated(keep='last')].sort_index()
 
+
+def _ensure_macro(lo: pd.Timestamp, hi: pd.Timestamp) -> pd.DataFrame | None:
+    """Ensure the cached macro frame covers [lo, hi]; fetch (chunked) if not."""
+    global _macro_frame, _macro_lo, _macro_hi, _macro_failed
+    if _macro_failed:
+        return None
+    lo = max(lo, _MACRO_MIN_START)
+    if _macro_frame is not None and _macro_lo <= lo and _macro_hi >= hi:
+        return _macro_frame
+
+    flo = min(lo, _macro_lo) if _macro_lo is not None else lo
+    fhi = max(hi, _macro_hi) if _macro_hi is not None else hi
     series = {}
     for name, fred_id in _FRED_SERIES.items():
-        try:
-            # FRED hangs indefinitely without a browser User-Agent, and
-            # bounding the dates keeps the CSV small and fast.
-            resp = requests.get(
-                _FRED_URL,
-                params={'id': fred_id, 'cosd': cosd, 'coed': end},
-                timeout=20,
-                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                                       'AppleWebKit/537.36'})
-            resp.raise_for_status()
-            df = pd.read_csv(io.StringIO(resp.text), na_values='.')
-            date_col, val_col = df.columns[0], df.columns[1]
-            df[date_col] = pd.to_datetime(df[date_col])
-            series[name] = df.set_index(date_col)[val_col]
-        except Exception as exc:
-            logger.warning('FRED fetch failed for %s: %s', fred_id, exc)
+        s = _fred_series_chunked(fred_id, flo, fhi)
+        if s is None:
+            logger.warning('FRED unavailable — macro features zero-filled for this run.')
+            _macro_failed = True
             return None
+        series[name] = s
 
     out = pd.DataFrame(series)
     out['f_term_spread'] = out['f_dgs10'] - out['f_dgs2']
-    out = out[['f_vix', 'f_term_spread', 'f_fedfunds']]
-    out = out.ffill()    # fill gaps using the padded lead-in, THEN trim to range
-    out = out.loc[(out.index >= pd.Timestamp(start)) & (out.index <= pd.Timestamp(end))]
-    out = out.dropna()
-    if out.empty:
-        return None
-
-    _MACRO_CACHE[key] = (time.time(), out)
+    out = out[['f_vix', 'f_term_spread', 'f_fedfunds']].ffill().dropna()
+    _macro_frame, _macro_lo, _macro_hi = out, flo, fhi
     return out
 
 
+def fetch_macro(start: str, end: str) -> pd.DataFrame | None:
+    """
+    Daily macro features (VIX, 10y-2y spread, Fed Funds) for [start, end],
+    sliced from a chunk-fetched, covering-cached FRED frame.  Returns None
+    when FRED is unavailable (caller then zero-fills).
+    """
+    if os.getenv('ML_SKIP_MACRO'):
+        return None
+    lo  = pd.Timestamp(start) - pd.Timedelta(days=14)
+    raw = _ensure_macro(lo, pd.Timestamp(end))
+    if raw is None:
+        return None
+    out = raw.loc[(raw.index >= lo) & (raw.index <= pd.Timestamp(end))]
+    return out if not out.empty else None
+
+
 # ── Sentiment block (GDELT) ────────────────────────────────────────────────────
+# GDELT's free anonymous quota rate-limits hard during bursts (e.g. from Colab).
+# After several consecutive failures we disable it for the rest of the run and
+# zero-fill — the model's modality dropout is built exactly for this, so a
+# build never stalls waiting on news data. Set ML_SKIP_SENTIMENT=1 to skip it
+# entirely up front.
+
+_SENTI_FAILS    = 0
+_SENTI_DISABLED = False
+_SENTI_MAX_FAILS = 6          # consecutive failures before giving up for the run
+_SENTI_RETRY_SLEEP = 6        # seconds before a single 429 retry
+
 
 def fetch_sentiment(ticker: str, start: str, end: str) -> pd.DataFrame | None:
     """
     Daily news tone for a ticker from the GDELT DOC 2.0 timeline API
-    (free, no key).  GDELT coverage starts 2017-01-01 — earlier dates are
-    simply absent and the caller zero-fills (modality dropout handles it).
-
-    Returns a DataFrame indexed by date with a single 'f_news_tone' column,
-    or None when GDELT is unreachable / has no coverage.
+    (free, no key).  GDELT coverage starts ~2017 — earlier dates are simply
+    absent and the caller zero-fills.  Returns a DataFrame with a single
+    'f_news_tone' column, or None when GDELT has no coverage / is unavailable.
     """
+    global _SENTI_FAILS, _SENTI_DISABLED
+    if _SENTI_DISABLED or os.getenv('ML_SKIP_SENTIMENT'):
+        return None
+
     key = ('senti', ticker, start, end)
     hit = _SENTI_CACHE.get(key)
     if hit and (time.time() - hit[0]) < _CACHE_TTL:
@@ -166,19 +216,15 @@ def fetch_sentiment(ticker: str, start: str, end: str) -> pd.DataFrame | None:
         resp = requests.get(_GDELT_URL, params=params, timeout=20,
                             headers={'User-Agent': 'TradeBot research (educational)'})
         if resp.status_code == 429:
-            # GDELT's shared anonymous quota throttles in bursts — one spaced
-            # retry recovers most of them (matters for the 80-ticker dataset
-            # build; live inference just zero-fills and moves on).
-            time.sleep(15)
+            time.sleep(_SENTI_RETRY_SLEEP)
             resp = requests.get(_GDELT_URL, params=params, timeout=20,
                                 headers={'User-Agent': 'TradeBot research (educational)'})
         resp.raise_for_status()
+        _SENTI_FAILS = 0          # a clean response resets the failure streak
         timeline = (resp.json().get('timeline') or [])
-        if not timeline:
-            return None
-        points = timeline[0].get('data') or []
+        points   = timeline[0].get('data') if timeline else None
         if not points:
-            return None
+            return None           # no coverage for this ticker — not a failure
         idx  = pd.to_datetime([p['date'] for p in points]).tz_localize(None)
         vals = [float(p['value']) for p in points]
         out  = pd.DataFrame({'f_news_tone': vals}, index=idx)
@@ -186,22 +232,36 @@ def fetch_sentiment(ticker: str, start: str, end: str) -> pd.DataFrame | None:
         _SENTI_CACHE[key] = (time.time(), out)
         return out
     except Exception as exc:
-        logger.warning('GDELT fetch failed for %s: %s', ticker, exc)
+        _SENTI_FAILS += 1
+        logger.warning('GDELT fetch failed for %s (%d/%d): %s',
+                       ticker, _SENTI_FAILS, _SENTI_MAX_FAILS, exc)
+        if _SENTI_FAILS >= _SENTI_MAX_FAILS:
+            _SENTI_DISABLED = True
+            logger.warning('GDELT repeatedly unavailable — news sentiment disabled '
+                           'for the rest of this run (zero-filled).')
         return None
 
 
 # ── Feature frame assembly ─────────────────────────────────────────────────────
 
 def build_feature_frame(ohlcv: pd.DataFrame, ticker: str,
-                        include_macro: bool = True,
-                        include_sentiment: bool = True) -> pd.DataFrame | None:
+                        include_macro: bool | None = None,
+                        include_sentiment: bool | None = None) -> pd.DataFrame | None:
     """
     Turn a raw OHLCV DataFrame into the model's per-day feature matrix.
 
     Returns a DataFrame [date × ALL_FEATURES] with the indicator warm-up
     period removed, or None when there isn't enough history.  Macro and
     sentiment columns are zero-filled wherever unavailable.
+
+    include_macro / include_sentiment default to True but honour the
+    ML_SKIP_MACRO / ML_SKIP_SENTIMENT env vars when left unset.
     """
+    if include_macro is None:
+        include_macro = not os.getenv('ML_SKIP_MACRO')
+    if include_sentiment is None:
+        include_sentiment = not os.getenv('ML_SKIP_SENTIMENT')
+
     if ohlcv is None or len(ohlcv) < feat.MIN_BARS + 5:
         return None
 
