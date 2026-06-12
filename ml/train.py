@@ -225,6 +225,10 @@ def main():
 
     model.load_state_dict(best_state)
 
+    # Persist the trained weights immediately, BEFORE the (occasionally fragile)
+    # ONNX export — so a missing export dependency never wastes a training run.
+    torch.save(best_state, os.path.join(_HERE, 'data', 'ml_model.pt'))
+
     # ── Threshold calibration on VALIDATION, honest report on TEST ────────
     val_m,  val_probs,  val_rets  = evaluate(model, loaders['val'],  device)
     thresholds = calibrate_thresholds(val_probs, val_rets)
