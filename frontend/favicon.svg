@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <!-- TradeBot Alpha Glyph — a Greek α whose tail breaks out like a price path -->
+  <!-- AlphaGlyph logo — a Greek α whose tail breaks out like a price path -->
   <rect width="24" height="24" rx="5" fill="#080b0a"/>
   <g transform="translate(1.2 1.2) scale(0.9)" stroke="#3fb950" stroke-width="2.1" stroke-linecap="round" fill="none">
     <path d="M18.1 11.3 C17.6 8.2 14.6 5.9 11.2 6.7 C7.4 7.6 5.3 11.6 6.6 14.8 C7.9 18 12.2 19.3 15.2 17.7"/>

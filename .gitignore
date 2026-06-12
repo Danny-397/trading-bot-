@@ -2,7 +2,7 @@
 .env
 
 # SQLite database — runtime data, not source code
-backend/tradebot.db
+backend/alphaglyph.db
 
 # ML training data — rebuilt by ml/dataset.py, too large for git
 # (the exported backend/ml_model.onnx + meta JSON ARE committed)

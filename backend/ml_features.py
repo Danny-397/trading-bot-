@@ -214,11 +214,11 @@ def fetch_sentiment(ticker: str, start: str, end: str) -> pd.DataFrame | None:
     }
     try:
         resp = requests.get(_GDELT_URL, params=params, timeout=20,
-                            headers={'User-Agent': 'TradeBot research (educational)'})
+                            headers={'User-Agent': 'AlphaGlyph research (educational)'})
         if resp.status_code == 429:
             time.sleep(_SENTI_RETRY_SLEEP)
             resp = requests.get(_GDELT_URL, params=params, timeout=20,
-                                headers={'User-Agent': 'TradeBot research (educational)'})
+                                headers={'User-Agent': 'AlphaGlyph research (educational)'})
         resp.raise_for_status()
         _SENTI_FAILS = 0          # a clean response resets the failure streak
         timeline = (resp.json().get('timeline') or [])

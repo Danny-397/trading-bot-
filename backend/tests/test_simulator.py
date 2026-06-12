@@ -2,7 +2,7 @@
 Unit tests for simulator.py — internal paper-trading engine.
 
 Uses an in-memory SQLite database for every test so nothing
-touches the real tradebot.db file.
+touches the real alphaglyph.db file.
 """
 
 import sys

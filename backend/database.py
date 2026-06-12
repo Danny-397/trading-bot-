@@ -7,10 +7,10 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Local fallback path (always writable — lives next to this file).
-_LOCAL_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tradebot.db')
+_LOCAL_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'alphaglyph.db')
 
 # Allow DATABASE_PATH env var so Render's persistent disk can be used.
-# On Render: set DATABASE_PATH=/data/tradebot.db and mount a disk at /data/.
+# On Render: set DATABASE_PATH=/data/alphaglyph.db and mount a disk at /data/.
 # Without this, the DB lives on the ephemeral filesystem and is wiped on every deploy.
 DB_PATH = os.getenv('DATABASE_PATH', '').strip() or _LOCAL_DB
 

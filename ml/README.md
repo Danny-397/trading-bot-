@@ -1,6 +1,6 @@
 # ML Transformer — Training Pipeline
 
-This directory trains TradeBot's multi-modal transformer and exports it for
+This directory trains AlphaGlyph's multi-modal transformer and exports it for
 the live bot. Training happens **offline** (Google Colab free GPU is plenty);
 the server only ever runs the exported ONNX model through `onnxruntime`,
 which is what keeps the deployed bot inside Render's free tier.
@@ -47,8 +47,8 @@ added as new blocks without redesigning anything.
 2. Run, cell by cell:
 
 ```python
-!git clone https://github.com/Danny-397/trading-bot-.git
-%cd trading-bot-
+!git clone https://github.com/Danny-397/alphaglyph.git
+%cd alphaglyph
 !pip -q install -r ml/requirements-train.txt
 
 import os

@@ -6,7 +6,7 @@
 
 services:
   - type: web
-    name: tradebot-backend
+    name: alphaglyph-backend
     runtime: python
     rootDir: backend
     buildCommand: pip install -r requirements.txt
@@ -19,7 +19,7 @@ services:
     #
     # No persistent disk: the SQLite DB lives on the ephemeral filesystem and
     # resets on each deploy. To keep trade history across deploys, add a disk
-    # mounted at /data and set DATABASE_PATH=/data/tradebot.db (requires a
+    # mounted at /data and set DATABASE_PATH=/data/alphaglyph.db (requires a
     # paid Render plan — disks are not available on the free tier).
     envVars:
       - key: PYTHON_VERSION

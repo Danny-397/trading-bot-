@@ -283,7 +283,7 @@ def start_bot() -> tuple[bool, str]:
     if _bot_thread and _bot_thread.is_alive():
         return False, 'Bot is already running'
     _stop_event.clear()
-    _bot_thread = threading.Thread(target=_bot_loop, daemon=True, name='tradebot')
+    _bot_thread = threading.Thread(target=_bot_loop, daemon=True, name='alphaglyph')
     _bot_thread.start()
     account = simulator.get_account()
     database.update_bot_state(
@@ -318,7 +318,7 @@ def resume_if_running() -> bool:
     if not (state and state.get('is_running')):
         return False
     _stop_event.clear()
-    _bot_thread = threading.Thread(target=_bot_loop, daemon=True, name='tradebot')
+    _bot_thread = threading.Thread(target=_bot_loop, daemon=True, name='alphaglyph')
     _bot_thread.start()
     _log('Bot auto-resumed after process restart')
     return True

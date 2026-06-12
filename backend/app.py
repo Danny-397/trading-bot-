@@ -1,5 +1,5 @@
 """
-Flask REST API for TradeBot.
+Flask REST API for AlphaGlyph.
 All endpoints return JSON.  The frontend polls these on a 10-second interval.
 """
 

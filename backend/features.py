@@ -184,7 +184,7 @@ def _try_stooq(ticker, period, start, end):
            f'&d1={d1}&d2={d2}&i=d')
     try:
         resp = requests.get(url, timeout=15,
-                            headers={'User-Agent': 'Mozilla/5.0 (TradeBot)'})
+                            headers={'User-Agent': 'Mozilla/5.0 (AlphaGlyph)'})
         resp.raise_for_status()
         text = resp.text.strip()
         # Stooq returns "No data" or an HTML error page for unknown symbols

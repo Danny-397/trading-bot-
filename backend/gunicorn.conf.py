@@ -1,4 +1,4 @@
-# Gunicorn production configuration for TradeBot
+# Gunicorn production configuration for AlphaGlyph
 #
 # CRITICAL — workers must be 1.
 # The trading bot runs in a background thread inside the Flask process.

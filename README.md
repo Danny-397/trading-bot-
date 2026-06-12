@@ -1,8 +1,8 @@
-# ◈ TradeBot — Quantitative Research Platform
+# ◈ AlphaGlyph — Quantitative Research Platform
 
 **A paper-trading algorithmic system that not only executes quantitative strategies, but rigorously validates whether its own performance is statistically real — using the same mathematical tools employed by institutional quant funds.**
 
-[![CI](https://github.com/Danny-397/trading-bot-/actions/workflows/ci.yml/badge.svg)](https://github.com/Danny-397/trading-bot-/actions/workflows/ci.yml)
+[![CI](https://github.com/Danny-397/alphaglyph/actions/workflows/ci.yml/badge.svg)](https://github.com/Danny-397/alphaglyph/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
 [![Flask](https://img.shields.io/badge/Flask-3.0-000000?style=flat&logo=flask)](https://flask.palletsprojects.com)
@@ -16,7 +16,7 @@
 ## ⚠️ Disclaimer — Paper Trading Only
 
 > This project is for **educational purposes only.**
-> TradeBot runs an **internal paper-trading simulator** — orders are filled at real market prices (from yfinance) but with simulated cash. No brokerage account, no API keys, no real money is ever involved.
+> AlphaGlyph runs an **internal paper-trading simulator** — orders are filled at real market prices (from yfinance) but with simulated cash. No brokerage account, no API keys, no real money is ever involved.
 > **This bot never trades real money.**
 > Nothing here constitutes financial advice. Past backtesting performance does not guarantee future results.
 
@@ -24,7 +24,7 @@
 
 ## What is this?
 
-TradeBot is a full-stack quantitative research platform that does something most student trading projects don't: **it asks whether its own results are real.**
+AlphaGlyph is a full-stack quantitative research platform that does something most student trading projects don't: **it asks whether its own results are real.**
 
 Most backtesting tools show you a Sharpe ratio and stop there. This system goes further — after every simulation it applies three independent statistical tests borrowed from professional quant finance:
 
@@ -152,7 +152,7 @@ All indicator maths (SMA, EMA, RSI, MACD, ADX, Bollinger Bands) are implemented 
 ## Project Structure
 
 ```
-trading-bot-/
+alphaglyph/
 ├── backend/
 │   ├── app.py           Flask REST API — all 13 endpoints
 │   ├── bot.py           Trading loop, order execution, trailing stop tracking
@@ -234,8 +234,8 @@ trading-bot-/
 
 ### 1. Clone the repo
 ```bash
-git clone https://github.com/Danny-397/trading-bot-
-cd trading-bot-
+git clone https://github.com/Danny-397/alphaglyph
+cd alphaglyph
 ```
 
 ### 2. Install dependencies
@@ -279,12 +279,12 @@ All environment variables are **optional** — the app runs out of the box with 
 |---|---|---|
 | `TIINGO_API_KEY` | No (recommended) | Free key from [tiingo.com](https://www.tiingo.com). Primary market-data source — yfinance/Stooq are rate-limited and often blocked on cloud IPs, so set this for reliable backtesting in production. |
 | `PORT` | No | Flask port (default: 5000) |
-| `DATABASE_PATH` | No | SQLite path (default: `backend/tradebot.db`). Set to `/data/tradebot.db` on Render for persistence. |
+| `DATABASE_PATH` | No | SQLite path (default: `backend/alphaglyph.db`). Set to `/data/alphaglyph.db` on Render for persistence. |
 | `CORS_ORIGINS` | No | Allowed CORS origins (default: `*`). Set to your Vercel URL in production. |
 
 ### Market data sources
 
-TradeBot tries data sources in order: **Tiingo** (if `TIINGO_API_KEY` is set) → **yfinance** → **Stooq**. The first to return data wins, and results are cached in-process for 15 minutes. yfinance and Stooq are free but heavily rate-limited (especially from datacenter IPs); Tiingo's free tier is reliable from anywhere, which is why it's recommended for deployment.
+AlphaGlyph tries data sources in order: **Tiingo** (if `TIINGO_API_KEY` is set) → **yfinance** → **Stooq**. The first to return data wins, and results are cached in-process for 15 minutes. yfinance and Stooq are free but heavily rate-limited (especially from datacenter IPs); Tiingo's free tier is reliable from anywhere, which is why it's recommended for deployment.
 
 ---
 
@@ -300,7 +300,7 @@ TradeBot tries data sources in order: **Tiingo** (if `TIINGO_API_KEY` is set) �
 
 | Variable | Value |
 |---|---|
-| `DATABASE_PATH` | `/data/tradebot.db` |
+| `DATABASE_PATH` | `/data/alphaglyph.db` |
 | `CORS_ORIGINS` | `https://your-project.vercel.app` |
 
 `render.yaml` in the repo root configures all of this automatically — Render detects it on import.
