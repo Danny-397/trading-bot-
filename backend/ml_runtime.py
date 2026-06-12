@@ -96,9 +96,11 @@ def get_info() -> dict:
         'seq_len':     _meta.get('seq_len'),
         'horizon':     _meta.get('horizon'),
         'n_params':    _meta.get('n_params'),
-        'features':    _meta.get('features'),
-        'val_metrics': _meta.get('val_metrics'),
-        'thresholds':  _meta.get('thresholds'),
+        'features':     _meta.get('features'),
+        'architecture': _meta.get('architecture'),
+        'val_metrics':  _meta.get('val_metrics'),
+        'test_metrics': _meta.get('test_metrics'),
+        'thresholds':   _meta.get('thresholds'),
     }
 
 
